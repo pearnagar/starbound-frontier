@@ -113,3 +113,29 @@ control configuration, piece supply, milestones, counters, cached score).
 `addResources`/`subtractResources`/`hasSufficientResources` helpers no longer exist —
 resource spending/production logic is out of scope for this milestone and was removed along
 with the placeholder resource set it was built on.
+
+## 2026-07-28 — Tripled cube lattice for canonical corner and edge identity
+
+**Context:** A board corner is shared by up to three hexes and an edge by up to two.
+Identifying a corner as `{ hex, cornerIndex }` would let each touching hex mint a different
+id for the same physical point, producing duplicate vertices and edges. Deriving pixel
+positions and comparing them would introduce floating-point equality, which is not
+acceptable for authoritative identity.
+
+**Decision:** Store hex centres on a **tripled cube lattice** — `(3q, -3q - 3r, 3r)` — so
+all six corners land on exact integer points of the same lattice. `VertexId` is the
+`"x,y,z"` key of that point; `EdgeId` is its two endpoint `VertexId`s joined in
+lexicographic order, making edge identity independent of endpoint order. Equality is plain
+`===` on strings.
+
+Corner points are always congruent to `(1,1,1)` or `(2,2,2)` modulo 3 while hex centres are
+congruent to `(0,0,0)`, so the two never collide. That parity property also makes corner
+adjacency an exact integer test: a difference matching any of the six corner offsets implies
+a real edge, because offsets of the wrong parity always land on a non-corner point.
+
+**Consequences:** Identity is deterministic, serializable, and free of floating-point
+tolerance, and shared corners/edges deduplicate automatically across hexes (verified by
+Euler's-formula tests on radius-1 and radius-2 clusters). Rendered pixel coordinates are a
+separate presentation-layer concern and must be derived from these ids, never used as ids.
+`getEdgeVertices` parses the id string, which is cheap but does mean edge endpoints are
+recovered by parsing rather than stored structurally.

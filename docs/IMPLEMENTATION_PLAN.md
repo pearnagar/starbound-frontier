@@ -39,7 +39,15 @@ results.)_
 
 ## 3. Board geometry
 
-- [ ] Hex/board coordinate system and geometry utilities
+- [x] Axial hex coordinates, clockwise direction order, neighbours, and distance
+- [x] Canonical corner (`VertexId`) and edge (`EdgeId`) identities on a tripled cube
+      lattice — shared identity across touching hexes, no floating-point equality
+- [x] Hex → vertices / hex → edges mappings, edge endpoints, and adjacency helpers
+- [x] Verified 2026-07-28 (99/99 unit tests passing, including exact corner/edge counts and
+      Euler's formula for radius-0/1/2 clusters)
+
+_Deliberately excluded: board shape, generation, sector types, placement, route ownership,
+and rendering._
 
 ## 4. Board generation
 

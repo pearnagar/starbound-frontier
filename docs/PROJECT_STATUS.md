@@ -4,8 +4,8 @@ _Last updated: 2026-07-28_
 
 ## Current milestone
 
-Milestone 2 — Domain model: **complete and verified**. (Milestone 1 — Foundation: complete
-and verified.)
+Milestone 3 — Board geometry: **complete and verified**. (Milestones 1–2: complete and
+verified.)
 
 ## Verified completed work
 
@@ -56,6 +56,23 @@ and verified.)
     used generic placeholder resources (`energy`/`minerals`/`food`/`research`) and a minimal
     `Player` shape — superseded once the precise game spec (exact resources, piece counts,
     AI difficulties, full player fields) was provided.
+- **Board geometry** under `src/game/domain/board/`:
+  - `hex-coordinate.ts` — `HexCoordinate` (axial), `HexDirection` (clockwise from East),
+    `createHexCoordinate`/`isValidHexCoordinate`, `hexCoordinateKey`,
+    `hexCoordinatesEqual`, `getHexNeighbor`/`tryGetHexNeighbor`/`getHexNeighbors`,
+    `getOppositeHexDirection`, `getHexDistance`, `areHexesAdjacent`, `isHexDirection`.
+  - `lattice.ts` — the tripled cube lattice (`LatticePoint`, `CORNER_OFFSETS`,
+    `hexCentreLatticePoint`, add/subtract/equality, key/parse) that makes corner identity
+    exact integer arithmetic.
+  - `vertex.ts` — `VertexId`, `getHexVertices` (clockwise from North), `getVertexPoint`,
+    `vertexIdKey`, `areVerticesConnected`.
+  - `edge.ts` — `EdgeId`, `createEdgeId` (order-independent; rejects degenerate and
+    unconnected endpoints), `getHexEdges`, `getEdgeVertices`, `doEdgesShareVertex`,
+    `edgeHasVertex`, `edgeIdKey`.
+  - `index.ts` — public board barrel, re-exported from `src/game/domain/index.ts`.
+  - Structural tests confirm a radius-1 patch has exactly 24 corners / 30 edges and a
+    radius-2 patch exactly 54 / 72, with Euler's formula holding in both — i.e. no duplicate
+    or split identities. No board shape, generation, placement, or rendering was added.
 
 ## Current blockers
 
@@ -69,26 +86,26 @@ git config --global user.email "you@example.com"
 
 ## Next milestone
 
-Milestone 3 — Board geometry. No board/hex-coordinate code exists yet.
+Milestone 4 — Board generation. No board shape, sector types, or layout code exists yet.
 
 ## Last verification commands
 
 Run from `C:\Users\pearn\Desktop\Catan\Starbound Frontier`, all passing (most recently after
-Milestone 2):
+Milestone 3):
 
 ```bash
 npm run typecheck     # tsc -b — clean
 npm run lint          # eslint . — clean
 npm run format:check  # prettier --check . — clean
-npm run test:run      # vitest run — 35/35 passed (6 files)
+npm run test:run      # vitest run — 99/99 passed (11 files)
 npm run build         # tsc -b && vite build — succeeded
-npm run test:coverage # vitest run --coverage — 35/35 passed, ~97% statements on domain code
+npm run test:coverage # vitest run --coverage — 99/99 passed, 99% statements (board/ at 100%)
 ```
 
-`npm run test:e2e` was **not** re-run this milestone — no application/UI behavior changed
-(the domain model isn't wired into the app yet), so no new end-to-end verification was
-needed. It was last run and passed (1/1) during Milestone 1, against the production preview
-build.
+`npm run test:e2e` was **not** re-run for Milestones 2–3 — no application/UI behavior
+changed (the domain model and board geometry are not wired into the app yet), so no new
+end-to-end verification was needed. It was last run and passed (1/1) during Milestone 1,
+against the production preview build.
 
 Dev server (`npm run dev`) started and verified in-browser during Milestone 1: page text,
 console messages (info/debug only, no errors), and viewport checks at 1366×768 and
