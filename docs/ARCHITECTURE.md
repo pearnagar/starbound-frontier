@@ -29,13 +29,23 @@ imports from any other layer.
 
 ## Current state
 
-`src/game/domain/` contains the pure domain model (`types/`) and board geometry (`board/`).
-`application/`, `infrastructure/`, and `presentation/` are still empty layer folders.
+`src/game/domain/` contains the pure domain model (`types/`), board geometry and generation
+(`board/`), and the seeded random source (`random/`). `application/`, `infrastructure/`, and
+`presentation/` are still empty layer folders.
+
+### Seeded randomness
+
+`src/game/domain/random/` holds a pure mulberry32 generator (`createSeededRandom`) plus
+`deriveAttemptSeed` for reproducible retries. It lives in the domain because it is pure
+arithmetic with no I/O, and `domain/` may not import from `infrastructure/`. Anything that
+genuinely touches the outside world — choosing a fresh seed at app start, persisting it —
+belongs in `infrastructure/random` later. `Math.random()` is never used.
 
 ## Board geometry
 
-`src/game/domain/board/` holds coordinate math and stable identities only — no board shape,
-generation, sector types, placement, or rendering.
+The geometry modules (`hex-coordinate.ts`, `lattice.ts`, `vertex.ts`, `edge.ts`) hold
+coordinate math and stable identities only. They know nothing about sectors, content, or
+rendering, so board generation builds on them rather than the other way round.
 
 ### Axial coordinates and direction order
 
@@ -75,6 +85,41 @@ is what makes corner adjacency an exact integer test.
 
 Rendered pixel positions are deliberately _not_ part of this layer; they belong to a later
 presentation milestone. Floating-point coordinates are never used as authoritative ids.
+
+## Board generation
+
+Shape and content are separate concerns: `board-shape.ts` produces coordinates only, and
+generation assigns content onto them.
+
+**Shape.** A radius-3 hexagon centred on the origin — `3r² + 3r + 1 = 37` sectors, inside
+the 30-40 target. Coordinates come out ring by ring, origin first, so ordering is stable.
+
+**Sector distribution** (`board-configuration.ts`, the single source of these numbers):
+6 each of alloy / plasma / cryonite / biofiber, 3 quantum rift, 6 empty space, 3 anomaly,
+and 1 central star fixed at the origin — 27 producing, 10 non-producing. Quantum Rift is
+deliberately rarer than every basic resource, and validation enforces that.
+
+**Production tokens.** 27 tokens over the values 2-6 and 8-12 (never 7), weighted toward the
+middle: one 2 and one 12, four 6s and four 8s, two 11s, three of everything else.
+`getProductionProbabilityWeight` exposes each value's two-dice likelihood for later UI use.
+
+The 6/8 adjacency rule is satisfied _by construction_ rather than by rejection: the high
+tokens are placed first onto a mutually non-adjacent subset of producing sectors, after
+which the remaining tokens cannot violate the rule. Reject-and-retry alone would have
+succeeded on roughly 2% of shuffles; this succeeds on the first attempt for almost every
+seed.
+
+**Hidden sectors.** Six outer-ring sectors start hidden, chosen deterministically from the
+seed. Hidden sectors keep their generated type and production number — visibility is a
+separate flag and never changes the underlying assignment. The central star sits at the
+origin, so it can never be selected. Reveal behaviour is not implemented.
+
+**Retry.** `generateBoard` runs attempts 1..`maxGenerationAttempts` (default 25), each with
+a seed derived from `(seed, attempt)`, validating every candidate with the same unrelaxed
+`validateBoard`. The winning attempt number is recorded on the board. Exhausting the limit
+returns a `BOARD_GENERATION_FAILED` result carrying the last attempt's validation errors.
+Identical seed and configuration always yield identical board state, including the attempt
+number.
 
 ## Planned structure (created milestone-by-milestone, not yet present)
 

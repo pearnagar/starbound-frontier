@@ -4,7 +4,7 @@ _Last updated: 2026-07-28_
 
 ## Current milestone
 
-Milestone 3 — Board geometry: **complete and verified**. (Milestones 1–2: complete and
+Milestone 4 — Board generation: **complete and verified**. (Milestones 1–3: complete and
 verified.)
 
 ## Verified completed work
@@ -72,7 +72,21 @@ verified.)
   - `index.ts` — public board barrel, re-exported from `src/game/domain/index.ts`.
   - Structural tests confirm a radius-1 patch has exactly 24 corners / 30 edges and a
     radius-2 patch exactly 54 / 72, with Euler's formula holding in both — i.e. no duplicate
-    or split identities. No board shape, generation, placement, or rendering was added.
+    or split identities.
+- **Board generation** under `src/game/domain/board/` and `src/game/domain/random/`:
+  - `random/seeded-random.ts` — pure mulberry32 `createSeededRandom` (unbiased `nextInt`,
+    non-mutating `shuffle`, `pick`) plus `deriveAttemptSeed`. No `Math.random()` anywhere.
+  - `board-shape.ts` — radius-3 hexagon (37 sectors), boundary detection, deterministic
+    coordinate ordering.
+  - `board-configuration.ts` — the single home for sector counts, production-token counts,
+    hidden-sector count, and the attempt limit.
+  - `sector.ts` / `production-number.ts` — sector vocabulary and producing/non-producing
+    split; production values 2-12 excluding 7, with `getProductionProbabilityWeight`.
+  - `board.ts` / `board-generation.ts` / `board-validation.ts` — serializable `Board`,
+    `generateBoard` with deterministic bounded retry, and `validateBoard` returning the
+    shared `DomainResult`.
+  - Measured across 200 seeds: zero failures, mean 1.015 attempts, worst case 3.
+  - Not wired into the UI (production bundle size unchanged, as expected for domain work).
 
 ## Current blockers
 
@@ -86,26 +100,26 @@ git config --global user.email "you@example.com"
 
 ## Next milestone
 
-Milestone 4 — Board generation. No board shape, sector types, or layout code exists yet.
+Milestone 5 — Setup placement. No placement rules exist yet.
 
 ## Last verification commands
 
 Run from `C:\Users\pearn\Desktop\Catan\Starbound Frontier`, all passing (most recently after
-Milestone 3):
+Milestone 4):
 
 ```bash
 npm run typecheck     # tsc -b — clean
 npm run lint          # eslint . — clean
 npm run format:check  # prettier --check . — clean
-npm run test:run      # vitest run — 99/99 passed (11 files)
+npm run test:run      # vitest run — 177/177 passed (16 files)
 npm run build         # tsc -b && vite build — succeeded
-npm run test:coverage # vitest run --coverage — 99/99 passed, 99% statements (board/ at 100%)
+npm run test:coverage # vitest run --coverage — 177/177 passed, 96% statements, 100% functions
 ```
 
-`npm run test:e2e` was **not** re-run for Milestones 2–3 — no application/UI behavior
-changed (the domain model and board geometry are not wired into the app yet), so no new
-end-to-end verification was needed. It was last run and passed (1/1) during Milestone 1,
-against the production preview build.
+`npm run test:e2e` was **not** re-run for Milestones 2–4 — no application/UI behavior
+changed (the domain model, board geometry, and board generation are not wired into the app
+yet), so no new end-to-end verification was needed. It was last run and passed (1/1) during
+Milestone 1, against the production preview build.
 
 Dev server (`npm run dev`) started and verified in-browser during Milestone 1: page text,
 console messages (info/debug only, no errors), and viewport checks at 1366×768 and

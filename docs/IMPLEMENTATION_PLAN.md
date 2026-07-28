@@ -51,7 +51,18 @@ and rendering._
 
 ## 4. Board generation
 
-- [ ] Procedural or seeded board layout generation
+- [x] Pure seeded random source (`domain/random`, mulberry32) with deterministic shuffle,
+      indexed/integer selection, and per-attempt seed derivation
+- [x] Standard shape: radius-3 hexagon, 37 sectors, central star fixed at the origin
+- [x] Sector and production-token distributions held in one configuration object
+- [x] Production numbers 2-12 excluding 7, weighted toward 6/8, with no adjacent 6/8 pair
+- [x] Six deterministically chosen hidden outer-ring sectors that retain their content
+- [x] Board validator over the `DomainResult` convention, and bounded deterministic retry
+      that records the winning attempt
+- [x] Verified 2026-07-28 (177/177 unit tests passing)
+
+_Deliberately excluded: sector reveal behaviour, anomaly effects, player placement, and
+resource production._
 
 ## 5. Setup placement
 

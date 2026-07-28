@@ -139,3 +139,49 @@ Euler's-formula tests on radius-1 and radius-2 clusters). Rendered pixel coordin
 separate presentation-layer concern and must be derived from these ids, never used as ids.
 `getEdgeVertices` parses the id string, which is cheap but does mean edge endpoints are
 recovered by parsing rather than stored structurally.
+
+## 2026-07-28 — Seeded random source lives in the domain, not infrastructure
+
+**Context:** `CLAUDE.md` says gameplay randomness must use a seeded random service at
+`src/game/infrastructure/random`. But board generation is domain logic, and
+`docs/ARCHITECTURE.md` forbids `domain/` from importing any other layer — so putting the
+generator in `infrastructure/` would have forced a dependency-rule violation.
+
+**Decision:** Put the pure generator at `src/game/domain/random/`. A seeded PRNG is
+deterministic arithmetic with no I/O, no clock, and no browser API — exactly what domain
+code is allowed to contain. The `infrastructure/random` slot is reserved for the genuinely
+external part: obtaining a fresh seed at application start and persisting it.
+
+**Consequences:** Domain generation stays self-contained and testable with no layer
+violation. The `CLAUDE.md` rule still holds in spirit — `Math.random()` is never called in
+domain logic — but the seeded service's location differs from the original wording.
+
+## 2026-07-28 — High production tokens placed constructively, not by rejection
+
+**Context:** The board must avoid adjacent 6/8 sectors. The obvious implementation is to
+shuffle all 27 tokens and retry until validation passes. Measured on the standard board, a
+uniform shuffle satisfies the rule only about 2% of the time, so a 25-attempt limit would
+fail for most seeds.
+
+**Decision:** Place the eight high-value tokens first, greedily, onto a mutually
+non-adjacent subset of producing sectors, then distribute the remaining tokens over what is
+left. Those remaining tokens are neither 6 nor 8, so they cannot break the rule. Retry is
+still implemented and still validates with the same unrelaxed validator — it is now a
+safety net rather than the primary mechanism.
+
+**Consequences:** Generation succeeds on the first attempt for nearly every seed (measured
+across 200 seeds: zero failures, mean 1.015 attempts, worst case 3). The generator and the
+validator remain independent — the validator re-derives the adjacency check from scratch
+rather than trusting the generator.
+
+## 2026-07-28 — The central star is marked by its sector type, not a separate flag
+
+**Context:** The board model called for a "central-star marker". A boolean field alongside
+`type: 'centralStar'` would encode the same fact twice and could drift out of sync.
+
+**Decision:** Treat `type === 'centralStar'` as the marker and expose an
+`isCentralStarSector` helper. Validation independently enforces exactly one central star,
+positioned at the origin and always visible.
+
+**Consequences:** No duplicated derived state in serialized board data. Consumers must call
+the helper (or compare the type) rather than reading a flag.
