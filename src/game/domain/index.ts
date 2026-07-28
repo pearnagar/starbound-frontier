@@ -1,3 +1,6 @@
 export * from './types'
 export * from './board'
+export * from './buildings'
 export * from './random'
+export * from './routes'
+export * from './setup'

@@ -185,3 +185,45 @@ positioned at the origin and always visible.
 
 **Consequences:** No duplicated derived state in serialized board data. Consumers must call
 the helper (or compare the type) rather than reading a flag.
+
+## 2026-07-28 — `BoardTopology` as a derived index, not stored board state
+
+**Context:** Setup placement repeatedly asks which corners and edges exist, which corners
+neighbour a corner, and which sectors touch a corner. Recomputing that from the 37 sectors
+on every legality check is wasteful, but storing it on `Board` would duplicate derived
+geometry in serialized state — something `docs/ARCHITECTURE.md` explicitly avoids.
+
+**Decision:** Added `createBoardTopology(board)`, which builds the indexes once and returns
+them separately. `Board` stays pure serializable content; the topology is a transient
+derived view passed alongside it into placement functions.
+
+**Consequences:** Save files never contain redundant geometry and can never disagree with
+it. Callers must build the topology once per board and thread it through — placement
+functions take `(state, topology, ...)` rather than `(state, board, ...)`.
+
+## 2026-07-28 — Setup grants resources as a returned delta, not by mutating players
+
+**Context:** Completing a second setup pair awards starting resources. The setup module
+could have taken the player list and returned updated `Player` objects.
+
+**Decision:** `placeSetupRoute` returns an optional `SetupResourceGrant` — the player id and
+a `ResourceInventory` delta — alongside the new setup state. Setup never holds or edits
+`Player` objects.
+
+**Consequences:** Setup stays focused on placement and remains testable without constructing
+players. Whichever layer owns player state applies the delta; when bank supply limits arrive
+they can be enforced at that application point rather than inside setup.
+
+## 2026-07-28 — Setup validation short-circuits to a single error
+
+**Context:** `createPlayer` (Milestone 2) collects every validation error in one pass. Setup
+placement checks are sequentially dependent instead — occupancy is meaningless if the corner
+is not on the board, and the distance rule is meaningless if the corner is occupied.
+
+**Decision:** Setup validators return the first failing check as a single-element `errors`
+array, still using the shared `DomainResult` shape. Ordering is: setup complete → expected
+phase → active player → target legality.
+
+**Consequences:** Callers handle one clear reason rather than a cascade of consequential
+errors. The result shape stays consistent with the rest of the domain, so no second error
+convention was introduced.

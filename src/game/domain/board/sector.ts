@@ -1,3 +1,4 @@
+import type { ResourceType } from '../types/resources'
 import type { HexCoordinate } from './hex-coordinate'
 import type { ProductionNumber } from './production-number'
 
@@ -36,6 +37,20 @@ export const BASIC_PRODUCING_SECTOR_TYPES = [
 
 export function isProducingSectorType(type: SectorType): type is ProducingSectorType {
   return (PRODUCING_SECTOR_TYPES as readonly SectorType[]).includes(type)
+}
+
+/** Which resource each producing sector type yields. */
+const PRODUCING_SECTOR_RESOURCES: Record<ProducingSectorType, ResourceType> = {
+  alloyAsteroidField: 'alloy',
+  plasmaNebula: 'plasma',
+  cryoniteWorld: 'cryonite',
+  biofiberPlanet: 'biofiber',
+  quantumRift: 'quantumCore',
+}
+
+/** The resource this sector type yields, or `undefined` if it does not produce. */
+export function getSectorResourceType(type: SectorType): ResourceType | undefined {
+  return isProducingSectorType(type) ? PRODUCING_SECTOR_RESOURCES[type] : undefined
 }
 
 export type SectorVisibility = 'visible' | 'hidden'

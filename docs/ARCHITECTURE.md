@@ -30,8 +30,9 @@ imports from any other layer.
 ## Current state
 
 `src/game/domain/` contains the pure domain model (`types/`), board geometry and generation
-(`board/`), and the seeded random source (`random/`). `application/`, `infrastructure/`, and
-`presentation/` are still empty layer folders.
+(`board/`), the seeded random source (`random/`), minimal structure ownership
+(`buildings/`, `routes/`), and initial setup placement (`setup/`). `application/`,
+`infrastructure/`, and `presentation/` are still empty layer folders.
 
 ### Seeded randomness
 
@@ -120,6 +121,39 @@ a seed derived from `(seed, attempt)`, validating every candidate with the same 
 returns a `BOARD_GENERATION_FAILED` result carrying the last attempt's validation errors.
 Identical seed and configuration always yield identical board state, including the attempt
 number.
+
+## Initial setup placement
+
+`src/game/domain/setup/` sequences the opening placements. It reads the board through
+`BoardTopology` (`board/board-topology.ts`), a derived index of every corner, edge, and the
+sectors touching each corner — built once per board so placement checks never re-walk it.
+
+**Snake order.** `getSetupPlacementOrder` returns seat order followed by its reverse, so
+`[P1 P2 P3 P4]` becomes `P1 P2 P3 P4 P4 P3 P2 P1`. One entry per outpost + route pair, two
+per player.
+
+**State transitions.** `SetupState` is an immutable snapshot; every transition returns a new
+one. Placing an outpost records it, keeps the same active player, switches `expects` to
+`'route'`, and stores `pendingOutpostVertexId`. Placing the route records it, clears the
+pending corner, increments that player's completed pairs, grants starting resources if that
+was their second pair, advances `stepIndex`, switches `expects` back to `'outpost'`, and
+sets `complete` once the final entry is done. The sequence never advances on a half-finished
+pair — the route is mandatory.
+
+**Distance rule.** An outpost is illegal on a corner that is occupied or _directly connected
+by an edge_ to an existing outpost. Corners two or more steps away stay legal. During setup
+an outpost need not connect to any existing route.
+
+**Hidden-sector restriction.** A setup outpost must touch at least one visible sector, so a
+player cannot claim a corner surrounded entirely by unrevealed space. Reveal behaviour is
+not implemented.
+
+**Second-outpost resources.** Starting resources are granted only when a player's _second_
+pair completes, and only once its route is down — not at outpost time. The grant is one
+resource per visible producing sector touching that second corner; hidden sectors yield
+nothing even when their underlying type produces, and empty space, anomalies, and the
+central star never yield. `placeSetupRoute` returns the delta as an explicit
+`SetupResourceGrant` rather than mutating any player, so applying it stays the caller's job.
 
 ## Planned structure (created milestone-by-milestone, not yet present)
 

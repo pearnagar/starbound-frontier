@@ -4,7 +4,7 @@ _Last updated: 2026-07-28_
 
 ## Current milestone
 
-Milestone 4 — Board generation: **complete and verified**. (Milestones 1–3: complete and
+Milestone 5 — Setup placement: **complete and verified**. (Milestones 1–4: complete and
 verified.)
 
 ## Verified completed work
@@ -86,6 +86,16 @@ verified.)
     `generateBoard` with deterministic bounded retry, and `validateBoard` returning the
     shared `DomainResult`.
   - Measured across 200 seeds: zero failures, mean 1.015 attempts, worst case 3.
+- **Setup placement** under `src/game/domain/setup/`, plus supporting ownership types:
+  - `board/board-topology.ts` — `createBoardTopology` derives every corner (96) and edge
+    (132) of the standard board, plus corner→sectors and corner→edges indexes.
+  - `board/sector.ts` — added `getSectorResourceType`, mapping each producing sector type to
+    the resource it yields.
+  - `buildings/outpost.ts`, `routes/trade-route.ts` — minimal `Outpost` / `TradeRoute`
+    ownership records on canonical `VertexId` / `EdgeId`.
+  - `setup/setup-state.ts` — immutable `SetupState`, snake-order construction, accessors.
+  - `setup/setup-placement.ts` — legality checks, legal-move listings, `placeSetupOutpost` /
+    `placeSetupRoute`, and the second-outpost resource grant.
   - Not wired into the UI (production bundle size unchanged, as expected for domain work).
 
 ## Current blockers
@@ -100,26 +110,26 @@ git config --global user.email "you@example.com"
 
 ## Next milestone
 
-Milestone 5 — Setup placement. No placement rules exist yet.
+Milestone 6 — Turn and production. No turn order, dice, or production rules exist yet.
 
 ## Last verification commands
 
 Run from `C:\Users\pearn\Desktop\Catan\Starbound Frontier`, all passing (most recently after
-Milestone 4):
+Milestone 5):
 
 ```bash
 npm run typecheck     # tsc -b — clean
 npm run lint          # eslint . — clean
 npm run format:check  # prettier --check . — clean
-npm run test:run      # vitest run — 177/177 passed (16 files)
+npm run test:run      # vitest run — 237/237 passed (19 files)
 npm run build         # tsc -b && vite build — succeeded
-npm run test:coverage # vitest run --coverage — 177/177 passed, 96% statements, 100% functions
+npm run test:coverage # vitest run --coverage — 237/237 passed, 97% statements, 100% functions
 ```
 
-`npm run test:e2e` was **not** re-run for Milestones 2–4 — no application/UI behavior
-changed (the domain model, board geometry, and board generation are not wired into the app
-yet), so no new end-to-end verification was needed. It was last run and passed (1/1) during
-Milestone 1, against the production preview build.
+`npm run test:e2e` was **not** re-run for Milestones 2–5 — no application/UI behavior
+changed (the domain layer is not wired into the app yet), so no new end-to-end verification
+was needed. It was last run and passed (1/1) during Milestone 1, against the production
+preview build.
 
 Dev server (`npm run dev`) started and verified in-browser during Milestone 1: page text,
 console messages (info/debug only, no errors), and viewport checks at 1366×768 and

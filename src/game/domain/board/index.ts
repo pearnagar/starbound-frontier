@@ -60,6 +60,7 @@ export {
 
 export {
   BASIC_PRODUCING_SECTOR_TYPES,
+  getSectorResourceType,
   isCentralStarSector,
   isProducingSectorType,
   isSectorHidden,
@@ -70,6 +71,16 @@ export {
   type SectorType,
   type SectorVisibility,
 } from './sector'
+
+export {
+  createBoardTopology,
+  getAdjacentBoardVertexIds,
+  getBoardEdgeIdsTouchingVertex,
+  getSectorsAdjacentToVertex,
+  isBoardEdge,
+  isBoardVertex,
+  type BoardTopology,
+} from './board-topology'
 
 export {
   getProductionProbabilityWeight,

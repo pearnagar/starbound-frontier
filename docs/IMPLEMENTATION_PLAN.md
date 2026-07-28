@@ -66,7 +66,17 @@ resource production._
 
 ## 5. Setup placement
 
-- [ ] Initial player placement rules
+- [x] `BoardTopology` index: board corners, edges, corner→sectors, corner→edges
+- [x] Snake-order sequencing with immutable `SetupState` transitions
+- [x] Outpost legality: on-board, unoccupied, no directly connected outpost, touches a
+      visible sector
+- [x] Mandatory connected route before the sequence advances
+- [x] Starting resources granted on the second pair only, from visible producing sectors
+- [x] Minimal outpost/trade-route ownership types (`buildings/`, `routes/`)
+- [x] Verified 2026-07-28 (237/237 unit tests passing)
+
+_Deliberately excluded: normal turns, dice, production rolls, construction costs, colonies,
+nexus, trading, exploration reveal, scoring, and AI._
 
 ## 6. Turn and production
 
