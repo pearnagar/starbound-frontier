@@ -35,6 +35,9 @@ function matchFor(board: ReturnType<typeof allVisible>, outposts: Match['outpost
     outposts,
     routes: {},
     bank: createResourceBank(),
+    // Off in a corner, away from the sectors these tests override at/near the
+    // origin, so the Marauder never incidentally blocks unrelated assertions.
+    marauderCoordinate: { q: 3, r: -3 },
     events: [],
     eventSequence: 0,
     status: 'inProgress',
@@ -351,5 +354,39 @@ describe('production resolution and bank', () => {
     expect(produced.value.bank.quantities.alloy).toBe(0)
     expect(produced.value.events.some((e) => e.type === 'ResourceShortage')).toBe(true)
     expect(produced.value.events.some((e) => e.type === 'ResourcesGranted')).toBe(false)
+  })
+
+  it('emits ProductionBlockedByMarauder and withholds resources for a sector it occupies', () => {
+    const board = withSectors(allVisible(baseBoard()), {
+      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
+    })
+    const [vertexId] = getHexVertices({ q: 0, r: 0 })
+    const base = {
+      ...matchFor(board, { [vertexId]: createOutpost(vertexId, p1) }),
+      marauderCoordinate: { q: 0, r: 0 },
+    }
+
+    let seed = base.randomState
+    let match = base
+    for (let i = 0; i < 500; i += 1) {
+      const started = beginTurn({ ...base, randomState: seed })
+      if (!started.success) throw new Error('startTurn failed')
+      const rolled = rollDice(started.value, p1)
+      if (rolled.success && rolled.value.lastDiceResult?.total === 8) {
+        match = rolled.value
+        break
+      }
+      seed += 1
+    }
+    expect(match.lastDiceResult?.total).toBe(8)
+
+    const produced = resolveProduction(match, p1)
+    expect(produced.success).toBe(true)
+    if (!produced.success) return
+    expect(produced.value.playersById[p1]?.resources.alloy).toBe(0)
+    const blockedEvent = produced.value.events.find((e) => e.type === 'ProductionBlockedByMarauder')
+    expect(blockedEvent).toBeDefined()
+    if (blockedEvent?.type !== 'ProductionBlockedByMarauder') return
+    expect(blockedEvent.coordinate).toEqual({ q: 0, r: 0 })
   })
 })

@@ -4,6 +4,7 @@ export { TURN_PHASES, isTurnPhase, type TurnPhase } from './turn-phase'
 
 export {
   DEFAULT_INITIAL_BANK_QUANTITY,
+  addToBank,
   bankHasAtLeast,
   createResourceBank,
   deductFromBank,
@@ -12,10 +13,16 @@ export {
 } from './resource-bank'
 
 export type {
+  CrisisCompletedEvent,
+  CrisisStartedEvent,
   DiceRolledEvent,
+  MarauderMovedEvent,
   MatchEvent,
+  ProductionBlockedByMarauderEvent,
   ProductionResolvedEvent,
   ResourceShortageEvent,
+  ResourceStolenEvent,
+  ResourcesDiscardedEvent,
   ResourcesGrantedEvent,
   SectorProducedEvent,
   TurnEndedEvent,
@@ -54,3 +61,26 @@ export {
   resolveProduction,
   rollDice,
 } from './turn-transitions'
+
+export {
+  computeRequiredDiscardCount,
+  type CrisisDiscardRequirement,
+  type CrisisDiscardingState,
+  type CrisisMovingMarauderState,
+  type CrisisSelectingStealTargetState,
+  type CrisisState,
+  type CrisisStealingState,
+} from './crisis-state'
+
+export {
+  completeCrisis,
+  getEligibleStealTargets,
+  getLegalMarauderDestinations,
+  getPendingDiscardPlayers,
+  getRequiredDiscardCount,
+  isCrisisComplete,
+  moveMarauder,
+  startCrisis,
+  stealCrisisResource,
+  submitCrisisDiscard,
+} from './crisis-transitions'

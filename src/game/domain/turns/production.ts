@@ -1,5 +1,6 @@
 import { listSectors } from '../board/board'
 import { createBoardTopology, getSectorsAdjacentToVertex } from '../board/board-topology'
+import { hexCoordinateKey, hexCoordinatesEqual, type HexCoordinate } from '../board/hex-coordinate'
 import { getSectorResourceType, type Sector } from '../board/sector'
 import type { Outpost } from '../buildings/outpost'
 import type { PlayerId } from '../types/ids'
@@ -21,19 +22,24 @@ export type ProductionDemand = Readonly<{
     sector: Sector
     outpostCount: number
   }>[]
+  /** Otherwise-matching sectors that produced nothing because the Marauder occupies them. */
+  blockedSectors: readonly Sector[]
 }>
 
 /**
  * Computes what every outpost adjacent to a rolled, visible, producing sector
  * would earn — before checking the bank. Adjacency is resolved through the
  * board topology (corner → sectors index, used in reverse via each outpost's
- * own vertex). Only outposts produce in this milestone.
+ * own vertex). Only outposts produce in this milestone. A sector occupied by
+ * the Void Marauder (`marauderCoordinate`) is excluded from production but
+ * still reported via `blockedSectors` so callers can emit an observable event.
  */
 export function getProductionDemand(match: Match, rollTotal: number): ProductionDemand {
   const topology = createBoardTopology(match.board)
   const grantsByPlayer = new Map<string, Record<string, number>>()
   const totalDemand: Record<string, number> = { ...createEmptyResourceInventory() }
   const producingSectorsByKey = new Map<string, { sector: Sector; outposts: Outpost[] }>()
+  const blockedSectorsByKey = new Map<string, Sector>()
 
   // For each placed outpost, look up (via the topology) the sectors touching
   // its corner, then keep only those that are visible and rolled this turn.
@@ -51,7 +57,12 @@ export function getProductionDemand(match: Match, rollTotal: number): Production
         continue
       }
 
-      const key = `${sector.coordinate.q},${sector.coordinate.r}`
+      const key = hexCoordinateKey(sector.coordinate)
+      if (isMarauderBlocked(sector.coordinate, match.marauderCoordinate)) {
+        blockedSectorsByKey.set(key, sector)
+        continue
+      }
+
       const entry = producingSectorsByKey.get(key)
       if (entry === undefined) {
         producingSectorsByKey.set(key, { sector, outposts: [outpost] })
@@ -78,15 +89,27 @@ export function getProductionDemand(match: Match, rollTotal: number): Production
   // insertion order, so events replay identically regardless of Object.values
   // ordering quirks.
   const producingSectors = listSectors(match.board)
-    .map((sector) => producingSectorsByKey.get(`${sector.coordinate.q},${sector.coordinate.r}`))
+    .map((sector) => producingSectorsByKey.get(hexCoordinateKey(sector.coordinate)))
     .filter((entry): entry is { sector: Sector; outposts: Outpost[] } => entry !== undefined)
     .map((entry) => ({ sector: entry.sector, outpostCount: entry.outposts.length }))
+
+  const blockedSectors = listSectors(match.board)
+    .map((sector) => blockedSectorsByKey.get(hexCoordinateKey(sector.coordinate)))
+    .filter((sector): sector is Sector => sector !== undefined)
 
   return {
     grantsByPlayer: grantsByPlayerRecord,
     totalDemand: totalDemand as ResourceInventory,
     producingSectors,
+    blockedSectors,
   }
+}
+
+function isMarauderBlocked(
+  sectorCoordinate: HexCoordinate,
+  marauderCoordinate: HexCoordinate,
+): boolean {
+  return hexCoordinatesEqual(sectorCoordinate, marauderCoordinate)
 }
 
 /** Resources this player would receive from a demand computation, or an empty inventory. */

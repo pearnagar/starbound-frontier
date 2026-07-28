@@ -60,3 +60,15 @@ export function deductFromBank(bank: ResourceBank, amounts: ResourceInventory): 
   }
   return { quantities: quantities as ResourceInventory }
 }
+
+/** Returns a full resource inventory to the bank (e.g. a crisis discard). */
+export function addToBank(bank: ResourceBank, amounts: ResourceInventory): ResourceBank {
+  const quantities: Record<string, number> = { ...bank.quantities }
+  for (const type of RESOURCE_TYPES) {
+    const amount = amounts[type]
+    if (amount > 0) {
+      quantities[type] = bank.quantities[type] + amount
+    }
+  }
+  return { quantities: quantities as ResourceInventory }
+}

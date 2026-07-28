@@ -197,6 +197,54 @@ normally. The bank only ever decreases and never goes negative.
 `ProductionResolved`, `TurnEnded`) to `Match.events`, each carrying a deterministic
 `sequence` assigned from `Match.eventSequence` — no timestamps.
 
+## Crisis system
+
+A roll of 7 enters `crisisPending` and, instead of stopping there, `rollDice` immediately
+calls `startCrisis` (`src/game/domain/turns/crisis-transitions.ts`), which computes the
+milestone's four-step flow: discard, Marauder movement, steal-target selection, and theft.
+
+**Crisis state.** `Match.crisisState` is an optional discriminated union
+(`src/game/domain/turns/crisis-state.ts`): `discarding | movingMarauder |
+selectingStealTarget | stealing`. It is `undefined` whenever no crisis is active, so a match
+can never claim two crisis sub-states are pending at once. `Match.marauderCoordinate` is a
+separate, always-present field — the Marauder exists on the board even outside a crisis.
+
+**Discard.** Required counts (`floor(total / 2)` for any player holding more than 7 cards)
+are fixed once, at crisis start, from each player's inventory at that moment — they do not
+change as other players' hands change mid-crisis. `submitCrisisDiscard` enforces an exact
+total, non-negative integer quantities, and sufficient ownership per resource; accepted
+discards move resources from the player to the bank via the new `addToBank` (the inverse of
+`deductFromBank`, added alongside this milestone). Discards may be submitted in any order;
+the sub-state advances to `movingMarauder` once every required player has submitted, or
+immediately at crisis start if nobody was over the threshold.
+
+**Marauder movement.** Legal only from `movingMarauder`, only by the active player, only to a
+different sector that exists on the board. `getLegalMarauderDestinations` lists every sector
+coordinate but the current one. Moving computes eligible steal targets in the same step.
+
+**Production blocking.** `getProductionDemand` now also returns `blockedSectors` — otherwise-
+matching, visible, rolled sectors that produced nothing solely because
+`Match.marauderCoordinate` occupies them. `resolveProduction` emits one
+`ProductionBlockedByMarauder` event per blocked sector before its normal `SectorProduced`/
+`ResourcesGranted` events, so the block is observable without changing unrelated production
+behavior.
+
+**Steal eligibility and theft.** Eligible targets are unique opponents (never the active
+player) with at least one outpost touching the Marauder's new sector and at least one
+resource; see `docs/DECISIONS.md` for why a lone eligible target is still passed explicitly
+rather than auto-resolved. `stealCrisisResource` builds a flat weighted list (one entry per
+card held) and draws from it with the existing seeded random service, so selection
+probability is exactly proportional to cards held and fully deterministic from
+`Match.randomState`. The stolen resource type is never included in the public `ResourceStolen`
+event, keeping the target's hand composition private from the active player.
+
+**Completion.** `isCrisisComplete` is true once there is no crisis state left to resolve
+(including "no crisis was ever active"); `completeCrisis` clears `crisisState` and advances to
+`trade`, preserving `activePlayerId` and `lastDiceResult`. Normal phase transitions
+(`advanceToTradePhase`, `advanceToBuildPhase`, `endTurn`) already require their specific phase,
+so they reject on their own while the match sits in `crisisPending` — no extra guard was
+needed there.
+
 ## Planned structure (created milestone-by-milestone, not yet present)
 
 ```

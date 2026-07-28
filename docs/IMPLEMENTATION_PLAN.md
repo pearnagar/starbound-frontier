@@ -98,7 +98,21 @@ nexus, sector reveal, scoring, and AI._
 
 ## 7. Crisis system
 
-- [ ] Random/seeded event or crisis mechanics
+- [x] Discriminated `CrisisState` (`discarding` / `movingMarauder` / `selectingStealTarget` /
+      `stealing`) plus a canonical `marauderCoordinate` on `Match`
+- [x] Roll-of-7 discard: fixed-at-start required counts (`floor(total / 2)` above 7 cards),
+      exact-total/ownership/quantity validation, discarded resources returned to the bank
+- [x] Void Marauder movement: active-player-only, only after discards finish, to a different
+      on-board sector; blocks production on its occupied sector without changing unrelated
+      production behaviour, with a `ProductionBlockedByMarauder` event
+- [x] Steal-target eligibility (unique adjacent opponents holding resources, excluding the
+      active player) and deterministic weighted theft via the seeded random service
+- [x] Crisis completion clears crisis state and advances to `trade`, preserving the active
+      player and rolled dice; normal trade/build/endTurn transitions stay blocked until then
+- [x] Verified 2026-07-29 (321/321 unit tests passing)
+
+_Deliberately excluded: trading, normal construction, colonies, nexus, sector reveal, scoring,
+and AI._
 
 ## 8. Construction
 

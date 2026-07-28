@@ -183,6 +183,9 @@ export function createMatchFromCompletedSetup(
       outposts: { ...setup.outposts },
       routes: { ...setup.routes },
       bank,
+      // The Void Marauder starts on the central star (always at the board
+      // origin) — see docs/DECISIONS.md.
+      marauderCoordinate: { q: 0, r: 0 },
       events: [],
       eventSequence: 0,
       status: 'inProgress',

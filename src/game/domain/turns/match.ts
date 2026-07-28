@@ -1,8 +1,10 @@
 import type { Board } from '../board/board'
+import type { HexCoordinate } from '../board/hex-coordinate'
 import type { Outpost } from '../buildings/outpost'
 import type { TradeRoute } from '../routes/trade-route'
 import type { PlayerId } from '../types/ids'
 import type { Player } from '../types/player'
+import type { CrisisState } from './crisis-state'
 import type { MatchEvent } from './match-events'
 import type { MatchId } from './match-id'
 import type { ResourceBank } from './resource-bank'
@@ -35,6 +37,10 @@ export type Match = Readonly<{
   outposts: Readonly<Record<string, Outpost>>
   routes: Readonly<Record<string, TradeRoute>>
   bank: ResourceBank
+  /** Authoritative Void Marauder location. Always a sector on `board`. */
+  marauderCoordinate: HexCoordinate
+  /** Present only while `phase === 'crisisPending'` and work remains unresolved. */
+  crisisState?: CrisisState
   events: readonly MatchEvent[]
   /** Sequence number of the most recently emitted event (0 if none yet). */
   eventSequence: number

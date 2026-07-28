@@ -24,6 +24,9 @@ function matchFor(board: ReturnType<typeof allVisible>, outposts: Match['outpost
     outposts,
     routes: {},
     bank: createResourceBank(),
+    // Off in a corner, away from the sectors these tests override at/near the
+    // origin, so the Marauder never incidentally blocks unrelated assertions.
+    marauderCoordinate: { q: 3, r: -3 },
     events: [],
     eventSequence: 0,
     status: 'inProgress',
@@ -169,5 +172,63 @@ describe('getShortResources', () => {
       quantumCore: 19,
     })
     expect(short).toEqual([])
+  })
+})
+
+describe('Void Marauder blocking', () => {
+  it('a sector occupied by the Marauder produces nothing', () => {
+    const board = withSectors(allVisible(baseBoard()), {
+      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
+    })
+    const [vertexId] = getHexVertices({ q: 0, r: 0 })
+    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
+
+    const demand = getProductionDemand(match, 8)
+    expect(demand.totalDemand.alloy).toBe(0)
+    expect(demand.grantsByPlayer[player1]).toBeUndefined()
+    expect(demand.blockedSectors).toHaveLength(1)
+    expect(demand.blockedSectors[0]?.coordinate).toEqual({ q: 0, r: 0 })
+  })
+
+  it('other matching sectors resolve normally while the Marauder blocks only its own sector', () => {
+    const board = withSectors(allVisible(baseBoard()), {
+      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
+      '0,-1': { type: 'plasmaNebula', productionNumber: 8 },
+    })
+    // Isolate corners so each player's outpost touches only one of the two
+    // sectors under test, keeping the origin (blocked) and neighbour
+    // (unblocked) contributions cleanly separable.
+    const cornersOfOrigin = getHexVertices({ q: 0, r: 0 })
+    const cornersOfNeighbour = getHexVertices({ q: 0, r: -1 })
+    const [originOnlyVertex] = cornersOfOrigin.filter((v) => !cornersOfNeighbour.includes(v))
+    const [neighbourOnlyVertex] = cornersOfNeighbour.filter((v) => !cornersOfOrigin.includes(v))
+    expect(originOnlyVertex).toBeDefined()
+    expect(neighbourOnlyVertex).toBeDefined()
+    if (originOnlyVertex === undefined || neighbourOnlyVertex === undefined) return
+
+    const outposts = {
+      [originOnlyVertex]: createOutpost(originOnlyVertex, player1),
+      [neighbourOnlyVertex]: createOutpost(neighbourOnlyVertex, player2),
+    }
+    const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
+
+    const demand = getProductionDemand(match, 8)
+    expect(demand.totalDemand.alloy).toBe(0)
+    expect(demand.totalDemand.plasma).toBe(1)
+    expect(demand.grantsByPlayer[player2]?.plasma).toBe(1)
+    expect(demand.blockedSectors.map((s) => s.coordinate)).toEqual([{ q: 0, r: 0 }])
+  })
+
+  it('a Marauder sector that does not match the roll is not reported as blocked', () => {
+    const board = withSectors(allVisible(baseBoard()), {
+      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
+    })
+    const [vertexId] = getHexVertices({ q: 0, r: 0 })
+    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
+
+    const demand = getProductionDemand(match, 5)
+    expect(demand.blockedSectors).toEqual([])
   })
 })

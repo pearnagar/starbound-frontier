@@ -244,3 +244,34 @@ the bank's shape.
 both the default and explicitly small quantities. If the eventual full specification calls
 for a different number, only the default value needs to change — callers that already pass
 their own quantity are unaffected.
+
+## 2026-07-29 — Void Marauder starts on the central star
+
+**Context:** Milestone 7 needs an explicit starting sector for the Void Marauder, and the
+match model previously had no Marauder location at all.
+
+**Decision:** `createMatchFromCompletedSetup` initializes `marauderCoordinate` to the board
+origin `{ q: 0, r: 0 }` — the same coordinate the central star is always generated at (see
+the "central star... at the origin" decision above). No separate configuration knob was
+added since the origin is already the board's one fixed, unambiguous landmark.
+
+**Consequences:** Every match starts with the Marauder occupying the central star, which
+never itself produces (it isn't a producing sector type), so this has no production-blocking
+effect until the Marauder is moved for the first time.
+
+## 2026-07-29 — A single eligible steal target is auto-selected, not chosen
+
+**Context:** After the Marauder moves, "exactly one eligible target" is a case the spec
+explicitly allows either resolving automatically or requiring explicit selection, as long as
+one approach is picked consistently.
+
+**Decision:** `stealCrisisResource` requires the caller to pass a `targetId` in every case —
+there is no implicit single-target auto-resolution inside the domain. `getEligibleStealTargets`
+always returns the full eligible list (which may have exactly one entry); the caller (a future
+application/UI layer) decides whether to skip a confirmation step when only one id is present.
+This keeps `stealCrisisResource`'s validation uniform (it always checks `targetId` against
+`eligibleTargetIds`) rather than adding a second calling convention for the one-target case.
+
+**Consequences:** Callers with exactly one eligible target must still pass that id explicitly;
+the domain never silently picks it on their behalf. Any "auto-confirm" UX is a presentation
+concern layered on top of `getEligibleStealTargets`, not a domain-level shortcut.

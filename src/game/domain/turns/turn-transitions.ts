@@ -2,6 +2,7 @@ import { getSectorResourceType } from '../board/sector'
 import type { PlayerId } from '../types/ids'
 import { RESOURCE_TYPES, type ResourceInventory } from '../types/resources'
 import type { DomainResult, DomainValidationError } from '../types/result'
+import { startCrisis } from './crisis-transitions'
 import { rollTwoDice } from './dice'
 import type { Match } from './match'
 import type { MatchEvent } from './match-events'
@@ -94,16 +95,16 @@ export function rollDice(match: Match, playerId: PlayerId): DomainResult<Match> 
     total: result.total,
   }))
 
-  const nextPhase = result.total === 7 ? 'crisisPending' : 'resolveProduction'
+  const rolledMatch: Match = {
+    ...withEvent,
+    randomState: nextRandomState,
+    lastDiceResult: result,
+    phase: result.total === 7 ? 'crisisPending' : 'resolveProduction',
+  }
 
   return {
     success: true,
-    value: {
-      ...withEvent,
-      randomState: nextRandomState,
-      lastDiceResult: result,
-      phase: nextPhase,
-    },
+    value: result.total === 7 ? startCrisis(rolledMatch) : rolledMatch,
   }
 }
 
@@ -129,6 +130,14 @@ export function resolveProduction(match: Match, playerId: PlayerId): DomainResul
   const shortResources = getShortResources(demand, match.bank.quantities)
 
   let working = match
+
+  for (const sector of demand.blockedSectors) {
+    working = appendEvent(working, (sequence) => ({
+      sequence,
+      type: 'ProductionBlockedByMarauder',
+      coordinate: sector.coordinate,
+    }))
+  }
 
   for (const entry of demand.producingSectors) {
     const resource = getSectorResourceType(entry.sector.type)
@@ -290,6 +299,7 @@ export function endTurn(match: Match, playerId: PlayerId): DomainResult<Match> {
     outposts: withEvent.outposts,
     routes: withEvent.routes,
     bank: withEvent.bank,
+    marauderCoordinate: withEvent.marauderCoordinate,
     events: withEvent.events,
     eventSequence: withEvent.eventSequence,
     status: withEvent.status,

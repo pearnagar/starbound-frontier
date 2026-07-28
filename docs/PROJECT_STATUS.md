@@ -1,11 +1,11 @@
 # Project Status
 
-_Last updated: 2026-07-28_
+_Last updated: 2026-07-29_
 
 ## Current milestone
 
-Milestone 6 — Turn and production: **complete and verified**. (Milestones 1–5: complete and
-verified.)
+Milestone 7 — Crisis and Void Marauder: **complete and verified**. (Milestones 1–6: complete
+and verified.)
 
 ## Verified completed work
 
@@ -123,6 +123,34 @@ verified.)
     validation, a roll of 7 entering `crisisPending` with no production, all-or-nothing
     resource shortages, and player-order wrap with turn-number increment.
   - Not wired into the UI (production bundle size unchanged, as expected for domain work).
+- **Crisis system and Void Marauder** under `src/game/domain/turns/`:
+  - `crisis-state.ts` — discriminated `CrisisState` union (`discarding`, `movingMarauder`,
+    `selectingStealTarget`, `stealing`), fixed-at-start `CrisisDiscardRequirement[]`, and
+    `computeRequiredDiscardCount` (half of a total, rounded down).
+  - `match.ts` — added `marauderCoordinate: HexCoordinate` (always present) and
+    `crisisState?: CrisisState` (present only mid-crisis) to `Match`.
+  - `match-initialization.ts` — new matches start with the Marauder on the central star
+    (board origin) — see `docs/DECISIONS.md`.
+  - `match-events.ts` — added `CrisisStarted`, `ResourcesDiscarded`, `MarauderMoved`,
+    `ResourceStolen` (deliberately omits which resource was stolen), `CrisisCompleted`,
+    `ProductionBlockedByMarauder`; all serializable, deterministic `sequence`, no timestamps.
+  - `resource-bank.ts` — added `addToBank` (the inverse of `deductFromBank`), used to return
+    discarded resources to the bank.
+  - `production.ts` — `getProductionDemand` now also returns `blockedSectors`: otherwise-
+    matching sectors that produced nothing because the Marauder occupies them. Other matching
+    sectors are unaffected.
+  - `turn-transitions.ts` — `rollDice` calls `startCrisis` on a roll of 7 instead of leaving
+    `crisisPending` a dead end; `resolveProduction` emits `ProductionBlockedByMarauder` for
+    each blocked sector before its normal production events.
+  - `crisis-transitions.ts` — the milestone's public API: `startCrisis`,
+    `getRequiredDiscardCount`, `getPendingDiscardPlayers`, `submitCrisisDiscard`,
+    `getLegalMarauderDestinations`, `moveMarauder`, `getEligibleStealTargets`,
+    `stealCrisisResource`, `isCrisisComplete`, `completeCrisis`. Reuses `DomainResult`,
+    branded `PlayerId`, canonical `HexCoordinate`/sector lookups, match events, and the
+    existing seeded random service (`createSeededRandom` — no `Math.random()`). Theft
+    selection is a flat per-card-held weighted list drawn via `rng.pick`, so probability is
+    exactly proportional to cards held and fully reproducible from `Match.randomState`.
+  - Not wired into the UI (production bundle size unchanged, as expected for domain work).
 
 ## Current blockers
 
@@ -136,27 +164,27 @@ git config --global user.email "you@example.com"
 
 ## Next milestone
 
-Milestone 7 — Crisis system. No discard, Void Marauder movement, or theft rules exist yet;
-`crisisPending` is currently a dead-end phase entered on a roll of 7.
+Milestone 8 — Construction. Building placement and construction rules do not exist yet;
+`build` is currently a phase marker only.
 
 ## Last verification commands
 
-Run from the project root, all passing (most recently after Milestone 6):
+Run from the project root, all passing (most recently after Milestone 7):
 
 ```bash
 npm run typecheck     # tsc -b — clean
 npm run lint          # eslint . — clean
-npm run test:run      # vitest run — 275/275 passed (23 files)
+npm run test:run      # vitest run — 321/321 passed (24 files)
 npm run build         # tsc -b && vite build — succeeded
 ```
 
 `npm run format:check` currently reports formatting warnings across the **entire** repository,
 including files untouched by this milestone and unchanged since Milestone 5 (verified via
 `git stash`) — this is a pre-existing environment/tooling issue on this machine, not something
-introduced by Milestone 6's code. `npm run test:coverage` was not re-run this milestone; the
-plain `test:run` suite (275/275) was used for verification instead.
+introduced by Milestone 7's code. `npm run test:coverage` was not re-run this milestone; the
+plain `test:run` suite (321/321) was used for verification instead.
 
-`npm run test:e2e` was **not** re-run for Milestones 2–6 — no application/UI behavior
+`npm run test:e2e` was **not** re-run for Milestones 2–7 — no application/UI behavior
 changed (the domain layer is not wired into the app yet), so no new end-to-end verification
 was needed. It was last run and passed (1/1) during Milestone 1, against the production
 preview build.
