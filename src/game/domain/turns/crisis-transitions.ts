@@ -206,15 +206,12 @@ export function submitCrisisDiscard(
   }
   const bank = addToBank(match.bank, discarded)
 
-  const withEvent = appendEvent(
-    { ...match, playersById, bank },
-    (sequence) => ({
-      sequence,
-      type: 'ResourcesDiscarded',
-      playerId,
-      discarded,
-    }),
-  )
+  const withEvent = appendEvent({ ...match, playersById, bank }, (sequence) => ({
+    sequence,
+    type: 'ResourcesDiscarded',
+    playerId,
+    discarded,
+  }))
 
   const remainingPendingIds = match.crisisState.pendingPlayerIds.filter((id) => id !== playerId)
   const nextCrisisState: CrisisState =
@@ -254,7 +251,11 @@ export function moveMarauder(
     return phaseCheck
   }
   if (match.activePlayerId !== playerId) {
-    return failure('WRONG_ACTIVE_PLAYER', 'Only the active player may move the Marauder.', 'playerId')
+    return failure(
+      'WRONG_ACTIVE_PLAYER',
+      'Only the active player may move the Marauder.',
+      'playerId',
+    )
   }
   if (match.crisisState === undefined || match.crisisState.status !== 'movingMarauder') {
     return failure(
@@ -266,7 +267,11 @@ export function moveMarauder(
 
   const targetSector = getSector(match.board, destination)
   if (targetSector === undefined) {
-    return failure('DESTINATION_OFF_BOARD', 'Destination is not a sector on the board.', 'destination')
+    return failure(
+      'DESTINATION_OFF_BOARD',
+      'Destination is not a sector on the board.',
+      'destination',
+    )
   }
   if (hexCoordinatesEqual(destination, match.marauderCoordinate)) {
     return failure(
@@ -310,25 +315,25 @@ function getAdjacentEligibleTargets(match: Match, coordinate: HexCoordinate): re
   const orderedIds: PlayerId[] = []
   const vertexIds = new Set(getHexVertices(sector.coordinate))
 
-  for (const outpost of Object.values(match.outposts)) {
-    if (!vertexIds.has(outpost.vertexId)) {
+  for (const structure of Object.values(match.structures)) {
+    if (!vertexIds.has(structure.vertexId)) {
       continue
     }
-    if (outpost.ownerId === match.activePlayerId) {
+    if (structure.ownerId === match.activePlayerId) {
       continue
     }
-    if (eligibleIds.has(outpost.ownerId)) {
+    if (eligibleIds.has(structure.ownerId)) {
       continue
     }
-    const player = match.playersById[outpost.ownerId]
+    const player = match.playersById[structure.ownerId]
     if (player === undefined) {
       continue
     }
     if (getTotalResourceCount(player.resources) === 0) {
       continue
     }
-    eligibleIds.add(outpost.ownerId)
-    orderedIds.push(outpost.ownerId)
+    eligibleIds.add(structure.ownerId)
+    orderedIds.push(structure.ownerId)
   }
 
   return orderedIds
@@ -367,7 +372,11 @@ export function stealCrisisResource(
     return failure('STEAL_NOT_PENDING', 'Stealing is not currently pending.', 'crisisState')
   }
   if (!match.crisisState.eligibleTargetIds.includes(targetId)) {
-    return failure('INVALID_STEAL_TARGET', 'This player is not an eligible steal target.', 'targetId')
+    return failure(
+      'INVALID_STEAL_TARGET',
+      'This player is not an eligible steal target.',
+      'targetId',
+    )
   }
 
   const target = match.playersById[targetId]
@@ -456,7 +465,11 @@ export function completeCrisis(match: Match, playerId: PlayerId): DomainResult<M
     return phaseCheck
   }
   if (match.activePlayerId !== playerId) {
-    return failure('WRONG_ACTIVE_PLAYER', 'Only the active player may complete the crisis.', 'playerId')
+    return failure(
+      'WRONG_ACTIVE_PLAYER',
+      'Only the active player may complete the crisis.',
+      'playerId',
+    )
   }
   if (!isCrisisComplete(match)) {
     return failure('CRISIS_NOT_COMPLETE', 'Crisis work remains unresolved.', 'crisisState')
@@ -482,7 +495,7 @@ export function completeCrisis(match: Match, playerId: PlayerId): DomainResult<M
     phase: 'trade',
     randomState: withEvent.randomState,
     ...(withEvent.lastDiceResult === undefined ? {} : { lastDiceResult: withEvent.lastDiceResult }),
-    outposts: withEvent.outposts,
+    structures: withEvent.structures,
     routes: withEvent.routes,
     bank: withEvent.bank,
     marauderCoordinate: withEvent.marauderCoordinate,

@@ -1,5 +1,6 @@
 import type { SetupState } from '../setup/setup-state'
 import type { Board } from '../board/board'
+import { createStructure, type Structure } from '../buildings/structure'
 import type { Player } from '../types/player'
 import { RESOURCE_TYPES, type ResourceInventory } from '../types/resources'
 import type { DomainResult, DomainValidationError } from '../types/result'
@@ -168,6 +169,11 @@ export function createMatchFromCompletedSetup(
     return failure('TOO_FEW_PLAYERS', 'A match needs at least two players.', 'setup')
   }
 
+  const structures: Record<string, Structure> = {}
+  for (const [vertexId, outpost] of Object.entries(setup.outposts)) {
+    structures[vertexId] = createStructure('outpost', outpost.vertexId, outpost.ownerId)
+  }
+
   return {
     success: true,
     value: {
@@ -180,7 +186,7 @@ export function createMatchFromCompletedSetup(
       turnNumber: 1,
       phase: 'startTurn',
       randomState: input.randomSeed,
-      outposts: { ...setup.outposts },
+      structures,
       routes: { ...setup.routes },
       bank,
       // The Void Marauder starts on the central star (always at the board

@@ -1,8 +1,12 @@
 import type { ProductionNumber } from '../board/production-number'
+import type { EdgeId } from '../board/edge'
 import type { HexCoordinate } from '../board/hex-coordinate'
+import type { VertexId } from '../board/vertex'
 import type { PlayerId } from '../types/ids'
+import type { PieceSupply } from '../types/piece-supply'
 import type { ResourceInventory, ResourceType } from '../types/resources'
 import type { CrisisDiscardRequirement } from './crisis-state'
+import type { ConstructionAction } from './construction-config'
 
 /**
  * Minimal serializable domain events. Every event carries a deterministic
@@ -32,7 +36,8 @@ export type SectorProducedEvent = Readonly<{
   coordinate: HexCoordinate
   resource: ResourceType
   productionNumber: ProductionNumber
-  outpostCount: number
+  structureCount: number
+  unitCount: number
 }>
 
 export type ResourcesGrantedEvent = Readonly<{
@@ -104,6 +109,49 @@ export type ProductionBlockedByMarauderEvent = Readonly<{
   coordinate: HexCoordinate
 }>
 
+export type TradeRouteBuiltEvent = Readonly<{
+  sequence: number
+  type: 'TradeRouteBuilt'
+  playerId: PlayerId
+  edgeId: EdgeId
+}>
+
+export type OutpostBuiltEvent = Readonly<{
+  sequence: number
+  type: 'OutpostBuilt'
+  playerId: PlayerId
+  vertexId: VertexId
+}>
+
+export type ColonyUpgradedEvent = Readonly<{
+  sequence: number
+  type: 'ColonyUpgraded'
+  playerId: PlayerId
+  vertexId: VertexId
+}>
+
+export type NexusUpgradedEvent = Readonly<{
+  sequence: number
+  type: 'NexusUpgraded'
+  playerId: PlayerId
+  vertexId: VertexId
+}>
+
+export type ResourcesSpentEvent = Readonly<{
+  sequence: number
+  type: 'ResourcesSpent'
+  playerId: PlayerId
+  action: ConstructionAction
+  spent: ResourceInventory
+}>
+
+export type PieceSupplyChangedEvent = Readonly<{
+  sequence: number
+  type: 'PieceSupplyChanged'
+  playerId: PlayerId
+  pieceSupply: PieceSupply
+}>
+
 export type MatchEvent =
   | TurnStartedEvent
   | DiceRolledEvent
@@ -118,6 +166,12 @@ export type MatchEvent =
   | ResourceStolenEvent
   | CrisisCompletedEvent
   | ProductionBlockedByMarauderEvent
+  | TradeRouteBuiltEvent
+  | OutpostBuiltEvent
+  | ColonyUpgradedEvent
+  | NexusUpgradedEvent
+  | ResourcesSpentEvent
+  | PieceSupplyChangedEvent
 
 /** Builds the next event and the sequence number that follows it. */
 export function nextEventSequence(currentSequence: number): number {

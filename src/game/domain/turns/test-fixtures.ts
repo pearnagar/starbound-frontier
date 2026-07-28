@@ -140,3 +140,4 @@ export {
   type TradeRoute,
   type VertexId,
 }
+export { getHexEdges } from '../board/edge'

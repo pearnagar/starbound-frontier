@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOutpost } from '../buildings/outpost'
+import { createStructure } from '../buildings/structure'
 import { createResourceBank } from './resource-bank'
 import { getProductionDemand, getShortResources } from './production'
 import { allVisible, baseBoard, getHexVertices, p1, p2, withSectors } from './test-fixtures'
@@ -9,8 +9,8 @@ import { asMatchId } from './match-id'
 const player1 = p1
 const player2 = p2
 
-/** Builds a minimal match around a given board and outposts, for production-only tests. */
-function matchFor(board: ReturnType<typeof allVisible>, outposts: Match['outposts']): Match {
+/** Builds a minimal match around a given board and structures, for production-only tests. */
+function matchFor(board: ReturnType<typeof allVisible>, structures: Match['structures']): Match {
   return {
     matchId: asMatchId('m'),
     board,
@@ -21,7 +21,7 @@ function matchFor(board: ReturnType<typeof allVisible>, outposts: Match['outpost
     turnNumber: 1,
     phase: 'resolveProduction',
     randomState: 1,
-    outposts,
+    structures,
     routes: {},
     bank: createResourceBank(),
     // Off in a corner, away from the sectors these tests override at/near the
@@ -39,7 +39,7 @@ describe('getProductionDemand', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
     const match = matchFor(board, outposts)
 
     const demand = getProductionDemand(match, 8)
@@ -52,7 +52,7 @@ describe('getProductionDemand', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8, visibility: 'hidden' },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
     const match = matchFor(board, outposts)
 
     const demand = getProductionDemand(match, 8)
@@ -65,7 +65,7 @@ describe('getProductionDemand', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
     const match = matchFor(board, outposts)
 
     const demand = getProductionDemand(match, 5)
@@ -77,7 +77,7 @@ describe('getProductionDemand', () => {
     // type under test can possibly explain any non-zero demand.
     const nonProducingTypes = ['centralStar', 'emptySpace', 'anomaly'] as const
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
 
     for (const type of nonProducingTypes) {
       const board = withSectors(allVisible(baseBoard()), {
@@ -119,8 +119,8 @@ describe('getProductionDemand', () => {
     if (originOnlyVertex === undefined) return
 
     const outposts = {
-      [shared]: createOutpost(shared, player1),
-      [originOnlyVertex]: createOutpost(originOnlyVertex, player2),
+      [shared]: createStructure('outpost', shared, player1),
+      [originOnlyVertex]: createStructure('outpost', originOnlyVertex, player2),
     }
     const match = matchFor(board, outposts)
     const demand = getProductionDemand(match, 8)
@@ -141,7 +141,7 @@ describe('getShortResources', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
     const match = matchFor(board, outposts)
     const demand = getProductionDemand(match, 8)
 
@@ -160,7 +160,7 @@ describe('getShortResources', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
     const match = matchFor(board, outposts)
     const demand = getProductionDemand(match, 8)
 
@@ -181,7 +181,7 @@ describe('Void Marauder blocking', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
     const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
 
     const demand = getProductionDemand(match, 8)
@@ -208,8 +208,8 @@ describe('Void Marauder blocking', () => {
     if (originOnlyVertex === undefined || neighbourOnlyVertex === undefined) return
 
     const outposts = {
-      [originOnlyVertex]: createOutpost(originOnlyVertex, player1),
-      [neighbourOnlyVertex]: createOutpost(neighbourOnlyVertex, player2),
+      [originOnlyVertex]: createStructure('outpost', originOnlyVertex, player1),
+      [neighbourOnlyVertex]: createStructure('outpost', neighbourOnlyVertex, player2),
     }
     const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
 
@@ -225,7 +225,7 @@ describe('Void Marauder blocking', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createOutpost(vertexId, player1) }
+    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
     const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
 
     const demand = getProductionDemand(match, 5)

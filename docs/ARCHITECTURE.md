@@ -165,26 +165,28 @@ follow completed setup.
 (complete, consistent player order, each seat with exactly two placed outposts/routes and
 matching completed-pair counts), then builds the initial `Match`: player order and the first
 active player carried over unchanged, setup resource grants applied to player inventories,
-two outposts and two trade routes deducted from each player's piece supply, and a fresh
+two outposts and two trade routes deducted from each player's piece supply, setup outposts
+converted into `Structure` records (`type: 'outpost'`) on `Match.structures`, and a fresh
 `ResourceBank` with the setup grants already deducted from it. IDs and random seeds are
 supplied by the caller, never generated inside the domain.
 
 **Phases.** A closed `TurnPhase` union — `startTurn`, `roll`, `resolveProduction`,
 `crisisPending`, `trade`, `build`, `endTurn` — drives normal flow
-`startTurn → roll → resolveProduction → trade → build → endTurn`. `trade` and `build` are
-phase markers only; no trading or construction rules exist yet. A roll totaling 7 enters
-`crisisPending` and stops there — discard, Marauder movement, and theft belong to the Crisis
-System milestone. `endTurn` advances to the next player, wrapping after the last seat and
-incrementing `turnNumber` only on that wrap.
+`startTurn → roll → resolveProduction → trade → build → endTurn`. `trade` is a phase marker
+only; no bank/player trading rules exist yet. `build` now hosts real construction actions (see
+Construction below). A roll totaling 7 enters `crisisPending` and stops there — discard,
+Marauder movement, and theft belong to the Crisis System milestone. `endTurn` advances to the
+next player, wrapping after the last seat and incrementing `turnNumber` only on that wrap.
 
 **Dice.** `rollTwoDice` draws two 1-6 values from the seeded random service
 (`domain/random`) as a pure function of the match's current `randomState`, returning both the
 result and the next state to store — no `Math.random()`, clock, or shared mutable generator.
 
-**Production.** `getProductionDemand` finds every outpost whose corner (via
-`BoardTopology`) touches a visible sector matching the rolled number, and grants one unit of
-that sector's resource per adjacent outpost. Only outposts produce in this milestone. Demand
-is aggregated per player and per resource before touching the bank.
+**Production.** `getProductionDemand` finds every structure whose corner (via
+`BoardTopology`) touches a visible sector matching the rolled number, and grants that sector's
+resource in units equal to the structure's production value (Outpost 1, Colony 2, Nexus 3;
+`getStructureProductionValue`). Demand is aggregated per player and per resource before
+touching the bank.
 
 **Bank and shortage.** `ResourceBank` holds one configurable initial quantity per resource
 (default 19 — see `docs/DECISIONS.md`). `resolveProduction` computes, per resource type,
@@ -244,6 +246,51 @@ event, keeping the target's hand composition private from the active player.
 (`advanceToTradePhase`, `advanceToBuildPhase`, `endTurn`) already require their specific phase,
 so they reject on their own while the match sits in `crisisPending` — no extra guard was
 needed there.
+
+## Construction
+
+`src/game/domain/turns/construction.ts` and `construction-config.ts` implement normal-turn
+building, legal only during `build` with no unresolved crisis.
+
+**Structure model.** `src/game/domain/buildings/structure.ts` defines one discriminated
+`Structure` type (`type: 'outpost' | 'colony' | 'nexus'`, `vertexId`, `ownerId`) rather than
+parallel per-type models. `Match.structures` (renamed from the setup-only `Match.outposts`)
+holds every placed structure keyed by canonical `VertexId`; `SetupState.outposts` is unrelated
+and still uses the pre-existing minimal `Outpost` setup type. `getStructureProductionValue`
+maps each type to its production units (Outpost 1, Colony 2, Nexus 3).
+
+**Costs.** `construction-config.ts` holds every construction cost in one typed map
+(`getBuildCost`), keyed by `ConstructionAction` (`tradeRoute | outpost | colony | nexus`), so
+validators and transitions never repeat resource literals.
+
+**Trade routes.** `getLegalTradeRouteEdges` / `validateTradeRouteBuild` / `buildTradeRoute`.
+An edge is legal when it is unoccupied, on the board, affordable, a Trade Route remains in the
+player's piece supply, and at least one endpoint establishes connectivity — a player-owned
+structure there, or a player-owned route touching it (an opponent structure at that endpoint
+does not establish connectivity, but does not block an _already_-connected other endpoint
+either).
+
+**Outposts.** `getLegalOutpostVertices` / `validateOutpostBuild` / `buildOutpost`. A corner is
+legal when on the board, unoccupied, has no directly adjacent structure, touches at least one
+visible sector, and touches at least one of the player's own routes — reusing the same
+adjacency/visibility checks as setup placement, but additionally requiring route connectivity
+(setup has no such requirement). No resources are granted.
+
+**Colony/Nexus upgrades.** `validateColonyUpgrade` / `upgradeToColony` and
+`validateNexusUpgrade` / `upgradeToNexus` replace the owner's own Outpost/Colony in place on
+the same vertex. Piece supply moves in both directions: upgrading returns the previous tier's
+piece to supply while consuming one of the next tier (e.g. Colony→Nexus consumes 1 Nexus and
+returns 1 Colony).
+
+**Bank-trade rate.** `getPlayerBankTradeRate` derives 3:1 vs. the standard 4:1 from whether the
+player currently owns any Nexus structure — not stored on `Player`, so it can never drift out
+of sync with the board. Bank-trading execution itself is out of scope.
+
+**Spending.** Every build/upgrade validates the full cost before mutating anything
+(`canAffordBuild`), then atomically deducts it from the player and returns it to the bank via
+`addToBank`, emitting one `ResourcesSpent` event. Piece-supply changes emit
+`PieceSupplyChanged`. Construction does not advance `Match.phase` — the same player may build
+repeatedly within one `build` phase until they can no longer afford or legally place anything.
 
 ## Planned structure (created milestone-by-milestone, not yet present)
 

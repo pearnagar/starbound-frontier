@@ -116,7 +116,27 @@ and AI._
 
 ## 8. Construction
 
-- [ ] Building placement and construction rules
+- [x] One discriminated `Structure` type (Outpost/Colony/Nexus) replacing the setup-only
+      minimal Outpost on `Match`
+- [x] Exact, centrally configured costs for Trade Route, Outpost, Colony upgrade, Nexus
+      upgrade
+- [x] Trade Route legality: on-board, unoccupied, affordable, piece available, connected via
+      an owned structure or owned route at either endpoint (not through an opponent structure)
+- [x] Outpost legality: on-board, unoccupied, no adjacent structure, touches a visible sector,
+      connected to a player-owned route, piece available, affordable
+- [x] Colony/Nexus upgrades: correct current structure type and ownership required; piece
+      supply moves in both directions (consumes the next tier, returns the previous tier)
+- [x] Atomic resource spending (validate-then-deduct, spent resources returned to the bank)
+- [x] Production values wired to structure type (Outpost 1 / Colony 2 / Nexus 3), preserving
+      hidden-sector, non-producing-sector, Marauder-blocking, and bank-shortage behavior
+- [x] Derived (not stored) 3:1 bank-trade rate for Nexus owners, for the future trading
+      milestone
+- [x] Construction events (`TradeRouteBuilt`, `OutpostBuilt`, `ColonyUpgraded`,
+      `NexusUpgraded`, `ResourcesSpent`, `PieceSupplyChanged`)
+- [x] Verified 2026-07-29 (370/370 unit tests passing)
+
+_Deliberately excluded: player/bank trading, exploration reveal, anomaly effects, scoring,
+victory, longest network, AI, and UI._
 
 ## 9. Trading
 

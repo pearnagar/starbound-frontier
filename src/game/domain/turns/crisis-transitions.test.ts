@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOutpost } from '../buildings/outpost'
+import { createStructure } from '../buildings/structure'
 import { asMatchId } from './match-id'
 import type { Match } from './match'
 import { createResourceBank } from './resource-bank'
@@ -52,7 +52,7 @@ function matchFor(
     turnNumber: 1,
     phase: 'crisisPending',
     randomState: 7,
-    outposts: {},
+    structures: {},
     routes: {},
     bank: createResourceBank(),
     marauderCoordinate: { q: 3, r: -3 },
@@ -306,7 +306,7 @@ describe('steal eligibility', () => {
     if (vertexId === undefined) throw new Error('no vertex')
     let withOutpost: Match = {
       ...match,
-      outposts: { [vertexId]: createOutpost(vertexId, p2) },
+      structures: { [vertexId]: createStructure('outpost', vertexId, p2) },
     }
     withOutpost = withResources(withOutpost, p2, inventory({ alloy: 1 }))
 
@@ -322,7 +322,7 @@ describe('steal eligibility', () => {
     if (vertexId === undefined) throw new Error('no vertex')
     let withOutpost: Match = {
       ...match,
-      outposts: { [vertexId]: createOutpost(vertexId, p1) },
+      structures: { [vertexId]: createStructure('outpost', vertexId, p1) },
     }
     withOutpost = withResources(withOutpost, p1, inventory({ alloy: 1 }))
 
@@ -338,7 +338,7 @@ describe('steal eligibility', () => {
     if (vertexId === undefined) throw new Error('no vertex')
     const withOutpost: Match = {
       ...match,
-      outposts: { [vertexId]: createOutpost(vertexId, p2) },
+      structures: { [vertexId]: createStructure('outpost', vertexId, p2) },
     }
     // p2 has zero resources by default.
 
@@ -355,9 +355,9 @@ describe('steal eligibility', () => {
     if (firstVertex === undefined || secondVertex === undefined) throw new Error('need 2 vertices')
     let withOutposts: Match = {
       ...match,
-      outposts: {
-        [firstVertex]: createOutpost(firstVertex, p2),
-        [secondVertex]: createOutpost(secondVertex, p2),
+      structures: {
+        [firstVertex]: createStructure('outpost', firstVertex, p2),
+        [secondVertex]: createStructure('outpost', secondVertex, p2),
       },
     }
     withOutposts = withResources(withOutposts, p2, inventory({ alloy: 2 }))
@@ -390,7 +390,7 @@ describe('resource theft', () => {
     let match = matchFor({ marauderCoordinate: { q: 3, r: -3 } })
     const [vertexId] = getHexVertices(destination)
     if (vertexId === undefined) throw new Error('no vertex')
-    match = { ...match, outposts: { [vertexId]: createOutpost(vertexId, p2) } }
+    match = { ...match, structures: { [vertexId]: createStructure('outpost', vertexId, p2) } }
     match = withResources(match, p2, targetResources)
     match = startCrisis(match)
     const moved = moveMarauder(match, p1, destination)
@@ -411,7 +411,7 @@ describe('resource theft', () => {
     let match = matchFor({ marauderCoordinate: { q: 3, r: -3 } })
     const [vertexId] = getHexVertices(destination)
     if (vertexId === undefined) throw new Error('no vertex')
-    match = { ...match, outposts: { [vertexId]: createOutpost(vertexId, p2) } }
+    match = { ...match, structures: { [vertexId]: createStructure('outpost', vertexId, p2) } }
     match = withResources(match, p2, inventory({ alloy: 1 }))
     match = startCrisis(match)
     const moved = moveMarauder(match, p1, destination)
@@ -450,7 +450,9 @@ describe('resource theft', () => {
     expect(resultA.success).toBe(true)
     expect(resultB.success).toBe(true)
     if (!resultA.success || !resultB.success) return
-    expect(resultA.value.playersById[p2]?.resources).toEqual(resultB.value.playersById[p2]?.resources)
+    expect(resultA.value.playersById[p2]?.resources).toEqual(
+      resultB.value.playersById[p2]?.resources,
+    )
     expect(resultA.value.randomState).toBe(resultB.value.randomState)
   })
 
@@ -473,7 +475,7 @@ describe('resource theft', () => {
       let match = matchFor({ marauderCoordinate: { q: 3, r: -3 }, randomState: seed })
       const [vertexId] = getHexVertices(destination)
       if (vertexId === undefined) throw new Error('no vertex')
-      match = { ...match, outposts: { [vertexId]: createOutpost(vertexId, p2) } }
+      match = { ...match, structures: { [vertexId]: createStructure('outpost', vertexId, p2) } }
       match = withResources(match, p2, inventory({ alloy: 2, plasma: 1 }))
       match = startCrisis(match)
       const moved = moveMarauder(match, p1, destination)
@@ -618,7 +620,10 @@ describe('rollDice integration', () => {
   function findSevenSeed(match: Match): number {
     let candidate = match.randomState
     for (let i = 0; i < 200; i += 1) {
-      const rolled = rollDice({ ...match, phase: 'roll', randomState: candidate }, match.activePlayerId)
+      const rolled = rollDice(
+        { ...match, phase: 'roll', randomState: candidate },
+        match.activePlayerId,
+      )
       if (rolled.success && rolled.value.lastDiceResult?.total === 7) {
         return candidate
       }

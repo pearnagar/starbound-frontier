@@ -4,8 +4,8 @@ _Last updated: 2026-07-29_
 
 ## Current milestone
 
-Milestone 7 — Crisis and Void Marauder: **complete and verified**. (Milestones 1–6: complete
-and verified.)
+Milestone 8 — Construction: **complete and verified**. (Milestones 1–7: complete and
+verified.)
 
 ## Verified completed work
 
@@ -151,6 +151,34 @@ and verified.)
     selection is a flat per-card-held weighted list drawn via `rng.pick`, so probability is
     exactly proportional to cards held and fully reproducible from `Match.randomState`.
   - Not wired into the UI (production bundle size unchanged, as expected for domain work).
+- **Construction** under `src/game/domain/turns/` and `src/game/domain/buildings/`:
+  - `buildings/structure.ts` — one discriminated `Structure` type (`outpost | colony |
+nexus`, each with `vertexId` + `ownerId`), `createStructure`, and
+    `getStructureProductionValue` (1 / 2 / 3). `Match.outposts` is renamed `Match.structures`
+    and now holds this type; `SetupState.outposts` is unrelated and unchanged (still the
+    minimal setup-only `Outpost`). `createMatchFromCompletedSetup` converts setup outposts
+    into `type: 'outpost'` structures.
+  - `turns/construction-config.ts` — every construction cost (Trade Route, Outpost, Colony
+    upgrade, Nexus upgrade) in one typed map, plus `canAffordCost`.
+  - `turns/construction.ts` — the milestone's public API: `getLegalTradeRouteEdges` /
+    `validateTradeRouteBuild` / `buildTradeRoute`, `getLegalOutpostVertices` /
+    `validateOutpostBuild` / `buildOutpost`, `validateColonyUpgrade` / `upgradeToColony`,
+    `validateNexusUpgrade` / `upgradeToNexus`, `canAffordBuild`, `getPlayerBankTradeRate`.
+    Legal only in the `build` phase, for the active player, with no unresolved crisis; does
+    not itself advance `Match.phase`, so a player may build repeatedly in one build phase.
+    Every action validates the full cost first, then atomically deducts it and returns it to
+    the bank (`ResourcesSpent`), and updates piece supply (`PieceSupplyChanged`) — Colony/Nexus
+    upgrades move a piece in both directions (consume the next tier, return the previous one).
+  - `turns/match-events.ts` — added `TradeRouteBuilt`, `OutpostBuilt`, `ColonyUpgraded`,
+    `NexusUpgraded`, `ResourcesSpent`, `PieceSupplyChanged`; `SectorProducedEvent.outpostCount`
+    renamed to `structureCount` (+ new `unitCount`) since Colonies/Nexus also produce.
+  - `turns/production.ts` — `getProductionDemand` now iterates `Match.structures` and grants
+    each structure's `getStructureProductionValue` in units, instead of a flat 1 per outpost.
+    Hidden-sector, non-producing-sector, Marauder-blocking, and bank-shortage behavior are
+    unchanged.
+  - `getPlayerBankTradeRate` is derived from owned structures, not stored on `Player` — a
+    Nexus owner gets 3:1 instead of 4:1. Bank-trading execution itself is out of scope.
+  - Not wired into the UI (production bundle size unchanged, as expected for domain work).
 
 ## Current blockers
 
@@ -164,27 +192,26 @@ git config --global user.email "you@example.com"
 
 ## Next milestone
 
-Milestone 8 — Construction. Building placement and construction rules do not exist yet;
-`build` is currently a phase marker only.
+Milestone 9 — Trading. Player-to-player and bank trading do not exist yet; `trade` is
+currently a phase marker only. `getPlayerBankTradeRate` (Milestone 8) already exposes the 3:1
+vs. 4:1 rate this milestone will need.
 
 ## Last verification commands
 
-Run from the project root, all passing (most recently after Milestone 7):
+Run from the project root, all passing (most recently after Milestone 8):
 
 ```bash
 npm run typecheck     # tsc -b — clean
 npm run lint          # eslint . — clean
-npm run test:run      # vitest run — 321/321 passed (24 files)
+npm run test:run      # vitest run — 370/370 passed (25 files)
 npm run build         # tsc -b && vite build — succeeded
 ```
 
-`npm run format:check` currently reports formatting warnings across the **entire** repository,
-including files untouched by this milestone and unchanged since Milestone 5 (verified via
-`git stash`) — this is a pre-existing environment/tooling issue on this machine, not something
-introduced by Milestone 7's code. `npm run test:coverage` was not re-run this milestone; the
-plain `test:run` suite (321/321) was used for verification instead.
+`npm run format:check` passes cleanly as of Milestone 8 (the files it previously flagged were
+re-formatted in the course of this milestone's edits). `npm run test:coverage` was not re-run
+this milestone; the plain `test:run` suite (370/370) was used for verification instead.
 
-`npm run test:e2e` was **not** re-run for Milestones 2–7 — no application/UI behavior
+`npm run test:e2e` was **not** re-run for Milestones 2–8 — no application/UI behavior
 changed (the domain layer is not wired into the app yet), so no new end-to-end verification
 was needed. It was last run and passed (1/1) during Milestone 1, against the production
 preview build.

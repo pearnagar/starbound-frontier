@@ -2,7 +2,7 @@ import { listSectors } from '../board/board'
 import { createBoardTopology, getSectorsAdjacentToVertex } from '../board/board-topology'
 import { hexCoordinateKey, hexCoordinatesEqual, type HexCoordinate } from '../board/hex-coordinate'
 import { getSectorResourceType, type Sector } from '../board/sector'
-import type { Outpost } from '../buildings/outpost'
+import { getStructureProductionValue, type Structure } from '../buildings/structure'
 import type { PlayerId } from '../types/ids'
 import {
   createEmptyResourceInventory,
@@ -20,31 +20,36 @@ export type ProductionDemand = Readonly<{
   /** Per-sector detail, useful for SectorProduced events. */
   producingSectors: readonly Readonly<{
     sector: Sector
-    outpostCount: number
+    /** Number of structures touching this sector that produced. */
+    structureCount: number
+    /** Total production units touching this sector (Outpost 1 / Colony 2 / Nexus 3). */
+    unitCount: number
   }>[]
   /** Otherwise-matching sectors that produced nothing because the Marauder occupies them. */
   blockedSectors: readonly Sector[]
 }>
 
 /**
- * Computes what every outpost adjacent to a rolled, visible, producing sector
- * would earn — before checking the bank. Adjacency is resolved through the
- * board topology (corner → sectors index, used in reverse via each outpost's
- * own vertex). Only outposts produce in this milestone. A sector occupied by
- * the Void Marauder (`marauderCoordinate`) is excluded from production but
+ * Computes what every structure adjacent to a rolled, visible, producing
+ * sector would earn — before checking the bank. Adjacency is resolved through
+ * the board topology (corner → sectors index, used in reverse via each
+ * structure's own vertex). Each structure yields its production value
+ * (Outpost 1 / Colony 2 / Nexus 3) in the sector's resource. A sector occupied
+ * by the Void Marauder (`marauderCoordinate`) is excluded from production but
  * still reported via `blockedSectors` so callers can emit an observable event.
  */
 export function getProductionDemand(match: Match, rollTotal: number): ProductionDemand {
   const topology = createBoardTopology(match.board)
   const grantsByPlayer = new Map<string, Record<string, number>>()
   const totalDemand: Record<string, number> = { ...createEmptyResourceInventory() }
-  const producingSectorsByKey = new Map<string, { sector: Sector; outposts: Outpost[] }>()
+  const producingSectorsByKey = new Map<string, { sector: Sector; structures: Structure[] }>()
   const blockedSectorsByKey = new Map<string, Sector>()
 
-  // For each placed outpost, look up (via the topology) the sectors touching
-  // its corner, then keep only those that are visible and rolled this turn.
-  for (const outpost of Object.values(match.outposts)) {
-    const touchingSectors = getSectorsAdjacentToVertex(topology, outpost.vertexId)
+  // For each placed structure, look up (via the topology) the sectors
+  // touching its corner, then keep only those that are visible and rolled
+  // this turn.
+  for (const structure of Object.values(match.structures)) {
+    const touchingSectors = getSectorsAdjacentToVertex(topology, structure.vertexId)
     for (const sector of touchingSectors) {
       if (sector.visibility !== 'visible') {
         continue
@@ -65,18 +70,19 @@ export function getProductionDemand(match: Match, rollTotal: number): Production
 
       const entry = producingSectorsByKey.get(key)
       if (entry === undefined) {
-        producingSectorsByKey.set(key, { sector, outposts: [outpost] })
+        producingSectorsByKey.set(key, { sector, structures: [structure] })
       } else {
-        entry.outposts.push(outpost)
+        entry.structures.push(structure)
       }
 
-      const existing = grantsByPlayer.get(outpost.ownerId)
+      const units = getStructureProductionValue(structure.type)
+      const existing = grantsByPlayer.get(structure.ownerId)
       const playerGrant = existing ?? { ...createEmptyResourceInventory() }
-      playerGrant[resource] = (playerGrant[resource] ?? 0) + 1
+      playerGrant[resource] = (playerGrant[resource] ?? 0) + units
       if (existing === undefined) {
-        grantsByPlayer.set(outpost.ownerId, playerGrant)
+        grantsByPlayer.set(structure.ownerId, playerGrant)
       }
-      totalDemand[resource] = (totalDemand[resource] ?? 0) + 1
+      totalDemand[resource] = (totalDemand[resource] ?? 0) + units
     }
   }
 
@@ -85,13 +91,20 @@ export function getProductionDemand(match: Match, rollTotal: number): Production
     grantsByPlayerRecord[playerId] = grant as ResourceInventory
   }
 
-  // Deterministic order matches board sector iteration order, not outpost
+  // Deterministic order matches board sector iteration order, not structure
   // insertion order, so events replay identically regardless of Object.values
   // ordering quirks.
   const producingSectors = listSectors(match.board)
     .map((sector) => producingSectorsByKey.get(hexCoordinateKey(sector.coordinate)))
-    .filter((entry): entry is { sector: Sector; outposts: Outpost[] } => entry !== undefined)
-    .map((entry) => ({ sector: entry.sector, outpostCount: entry.outposts.length }))
+    .filter((entry): entry is { sector: Sector; structures: Structure[] } => entry !== undefined)
+    .map((entry) => ({
+      sector: entry.sector,
+      structureCount: entry.structures.length,
+      unitCount: entry.structures.reduce(
+        (sum, structure) => sum + getStructureProductionValue(structure.type),
+        0,
+      ),
+    }))
 
   const blockedSectors = listSectors(match.board)
     .map((sector) => blockedSectorsByKey.get(hexCoordinateKey(sector.coordinate)))

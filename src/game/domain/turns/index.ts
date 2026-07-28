@@ -13,18 +13,24 @@ export {
 } from './resource-bank'
 
 export type {
+  ColonyUpgradedEvent,
   CrisisCompletedEvent,
   CrisisStartedEvent,
   DiceRolledEvent,
   MarauderMovedEvent,
   MatchEvent,
+  NexusUpgradedEvent,
+  OutpostBuiltEvent,
+  PieceSupplyChangedEvent,
   ProductionBlockedByMarauderEvent,
   ProductionResolvedEvent,
   ResourceShortageEvent,
   ResourceStolenEvent,
   ResourcesDiscardedEvent,
   ResourcesGrantedEvent,
+  ResourcesSpentEvent,
   SectorProducedEvent,
+  TradeRouteBuiltEvent,
   TurnEndedEvent,
   TurnStartedEvent,
 } from './match-events'
@@ -32,7 +38,7 @@ export type {
 export {
   getActivePlayer,
   getPlayer,
-  listMatchOutposts,
+  listMatchStructures,
   listMatchRoutes,
   type DiceResult,
   type Match,
@@ -84,3 +90,25 @@ export {
   stealCrisisResource,
   submitCrisisDiscard,
 } from './crisis-transitions'
+
+export {
+  CONSTRUCTION_ACTIONS,
+  canAffordCost,
+  getBuildCost,
+  type ConstructionAction,
+} from './construction-config'
+
+export {
+  buildOutpost,
+  buildTradeRoute,
+  canAffordBuild,
+  getLegalOutpostVertices,
+  getLegalTradeRouteEdges,
+  getPlayerBankTradeRate,
+  upgradeToColony,
+  upgradeToNexus,
+  validateColonyUpgrade,
+  validateNexusUpgrade,
+  validateOutpostBuild,
+  validateTradeRouteBuild,
+} from './construction'

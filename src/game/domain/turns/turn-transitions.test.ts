@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOutpost } from '../buildings/outpost'
+import { createStructure } from '../buildings/structure'
 import { asMatchId } from './match-id'
 import type { Match } from './match'
 import { createResourceBank } from './resource-bank'
@@ -21,7 +21,10 @@ import {
   withSectors,
 } from './test-fixtures'
 
-function matchFor(board: ReturnType<typeof allVisible>, outposts: Match['outposts'] = {}): Match {
+function matchFor(
+  board: ReturnType<typeof allVisible>,
+  structures: Match['structures'] = {},
+): Match {
   return {
     matchId: asMatchId('m'),
     board,
@@ -32,7 +35,7 @@ function matchFor(board: ReturnType<typeof allVisible>, outposts: Match['outpost
     turnNumber: 1,
     phase: 'startTurn',
     randomState: 42,
-    outposts,
+    structures,
     routes: {},
     bank: createResourceBank(),
     // Off in a corner, away from the sectors these tests override at/near the
@@ -300,7 +303,7 @@ describe('production resolution and bank', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const base = matchFor(board, { [vertexId]: createOutpost(vertexId, p1) })
+    const base = matchFor(board, { [vertexId]: createStructure('outpost', vertexId, p1) })
 
     // Force a roll of 8 by finding a seed.
     let seed = base.randomState
@@ -330,7 +333,7 @@ describe('production resolution and bank', () => {
       '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const base = matchFor(board, { [vertexId]: createOutpost(vertexId, p1) })
+    const base = matchFor(board, { [vertexId]: createStructure('outpost', vertexId, p1) })
     const starvedBank = createResourceBank(0)
 
     let seed = base.randomState
@@ -362,7 +365,7 @@ describe('production resolution and bank', () => {
     })
     const [vertexId] = getHexVertices({ q: 0, r: 0 })
     const base = {
-      ...matchFor(board, { [vertexId]: createOutpost(vertexId, p1) }),
+      ...matchFor(board, { [vertexId]: createStructure('outpost', vertexId, p1) }),
       marauderCoordinate: { q: 0, r: 0 },
     }
 

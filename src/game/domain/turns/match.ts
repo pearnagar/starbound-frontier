@@ -1,6 +1,6 @@
 import type { Board } from '../board/board'
 import type { HexCoordinate } from '../board/hex-coordinate'
-import type { Outpost } from '../buildings/outpost'
+import type { Structure } from '../buildings/structure'
 import type { TradeRoute } from '../routes/trade-route'
 import type { PlayerId } from '../types/ids'
 import type { Player } from '../types/player'
@@ -34,7 +34,8 @@ export type Match = Readonly<{
   /** Seed for the *next* seeded-random draw (e.g. dice). */
   randomState: number
   lastDiceResult?: DiceResult
-  outposts: Readonly<Record<string, Outpost>>
+  /** Placed Outposts, Colonies, and Nexus structures, keyed by canonical vertex id. */
+  structures: Readonly<Record<string, Structure>>
   routes: Readonly<Record<string, TradeRoute>>
   bank: ResourceBank
   /** Authoritative Void Marauder location. Always a sector on `board`. */
@@ -55,8 +56,8 @@ export function getActivePlayer(match: Match): Player | undefined {
   return match.playersById[match.activePlayerId]
 }
 
-export function listMatchOutposts(match: Match): readonly Outpost[] {
-  return Object.values(match.outposts)
+export function listMatchStructures(match: Match): readonly Structure[] {
+  return Object.values(match.structures)
 }
 
 export function listMatchRoutes(match: Match): readonly TradeRoute[] {

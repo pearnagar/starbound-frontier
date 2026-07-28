@@ -187,7 +187,13 @@ describe('createMatchFromCompletedSetup', () => {
     })
     expect(result.success).toBe(true)
     if (!result.success) return
-    expect(result.value.outposts).toEqual(setup.outposts)
+    for (const [vertexId, outpost] of Object.entries(setup.outposts)) {
+      expect(result.value.structures[vertexId]).toEqual({
+        type: 'outpost',
+        vertexId: outpost.vertexId,
+        ownerId: outpost.ownerId,
+      })
+    }
     expect(result.value.routes).toEqual(setup.routes)
   })
 

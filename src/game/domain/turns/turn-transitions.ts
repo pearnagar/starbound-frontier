@@ -153,7 +153,8 @@ export function resolveProduction(match: Match, playerId: PlayerId): DomainResul
       coordinate: entry.sector.coordinate,
       resource,
       productionNumber,
-      outpostCount: entry.outpostCount,
+      structureCount: entry.structureCount,
+      unitCount: entry.unitCount,
     }))
   }
 
@@ -296,7 +297,7 @@ export function endTurn(match: Match, playerId: PlayerId): DomainResult<Match> {
     turnNumber: wrapped ? match.turnNumber + 1 : match.turnNumber,
     phase: 'startTurn',
     randomState: withEvent.randomState,
-    outposts: withEvent.outposts,
+    structures: withEvent.structures,
     routes: withEvent.routes,
     bank: withEvent.bank,
     marauderCoordinate: withEvent.marauderCoordinate,
