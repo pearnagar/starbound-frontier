@@ -31,8 +31,9 @@ imports from any other layer.
 
 `src/game/domain/` contains the pure domain model (`types/`), board geometry and generation
 (`board/`), the seeded random source (`random/`), minimal structure ownership
-(`buildings/`, `routes/`), and initial setup placement (`setup/`). `application/`,
-`infrastructure/`, and `presentation/` are still empty layer folders.
+(`buildings/`, `routes/`), initial setup placement (`setup/`), and match/turn state
+(`turns/`). `application/`, `infrastructure/`, and `presentation/` are still empty layer
+folders.
 
 ### Seeded randomness
 
@@ -154,6 +155,47 @@ resource per visible producing sector touching that second corner; hidden sector
 nothing even when their underlying type produces, and empty space, anomalies, and the
 central star never yield. `placeSetupRoute` returns the delta as an explicit
 `SetupResourceGrant` rather than mutating any player, so applying it stays the caller's job.
+
+## Match and turn state
+
+`src/game/domain/turns/` holds the immutable `Match` state and normal-turn transitions that
+follow completed setup.
+
+**Initialization.** `createMatchFromCompletedSetup` validates a finished `SetupState`
+(complete, consistent player order, each seat with exactly two placed outposts/routes and
+matching completed-pair counts), then builds the initial `Match`: player order and the first
+active player carried over unchanged, setup resource grants applied to player inventories,
+two outposts and two trade routes deducted from each player's piece supply, and a fresh
+`ResourceBank` with the setup grants already deducted from it. IDs and random seeds are
+supplied by the caller, never generated inside the domain.
+
+**Phases.** A closed `TurnPhase` union — `startTurn`, `roll`, `resolveProduction`,
+`crisisPending`, `trade`, `build`, `endTurn` — drives normal flow
+`startTurn → roll → resolveProduction → trade → build → endTurn`. `trade` and `build` are
+phase markers only; no trading or construction rules exist yet. A roll totaling 7 enters
+`crisisPending` and stops there — discard, Marauder movement, and theft belong to the Crisis
+System milestone. `endTurn` advances to the next player, wrapping after the last seat and
+incrementing `turnNumber` only on that wrap.
+
+**Dice.** `rollTwoDice` draws two 1-6 values from the seeded random service
+(`domain/random`) as a pure function of the match's current `randomState`, returning both the
+result and the next state to store — no `Math.random()`, clock, or shared mutable generator.
+
+**Production.** `getProductionDemand` finds every outpost whose corner (via
+`BoardTopology`) touches a visible sector matching the rolled number, and grants one unit of
+that sector's resource per adjacent outpost. Only outposts produce in this milestone. Demand
+is aggregated per player and per resource before touching the bank.
+
+**Bank and shortage.** `ResourceBank` holds one configurable initial quantity per resource
+(default 19 — see `docs/DECISIONS.md`). `resolveProduction` computes, per resource type,
+whether total demand exceeds the bank's current supply; if so, that resource is withheld
+from every player this resolution (all-or-nothing), while unaffected resources still resolve
+normally. The bank only ever decreases and never goes negative.
+
+**Events.** Every transition appends minimal serializable events
+(`TurnStarted`, `DiceRolled`, `SectorProduced`, `ResourcesGranted`, `ResourceShortage`,
+`ProductionResolved`, `TurnEnded`) to `Match.events`, each carrying a deterministic
+`sequence` assigned from `Match.eventSequence` — no timestamps.
 
 ## Planned structure (created milestone-by-milestone, not yet present)
 

@@ -227,3 +227,20 @@ phase → active player → target legality.
 **Consequences:** Callers handle one clear reason rather than a cascade of consequential
 errors. The result shape stays consistent with the rest of the domain, so no second error
 convention was introduced.
+
+## 2026-07-29 — Default resource bank quantity: 19 per resource
+
+**Context:** Milestone 6 requires a finite, configurable resource bank, but the game
+specification available to this milestone does not state an exact starting quantity per
+resource.
+
+**Decision:** Default `createResourceBank()` to 19 units of each of the five resources
+(`alloy`, `plasma`, `cryonite`, `biofiber`, `quantumCore`), matching the conventional
+physical-board-game bank size per resource type. The quantity is an explicit parameter, not
+a hardcoded constant, so a later milestone or balance pass can override it without touching
+the bank's shape.
+
+**Consequences:** Shortage behavior (all-or-nothing per resource) is exercised by tests using
+both the default and explicitly small quantities. If the eventual full specification calls
+for a different number, only the default value needs to change — callers that already pass
+their own quantity are unaffected.

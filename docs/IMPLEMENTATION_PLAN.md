@@ -80,7 +80,21 @@ nexus, trading, exploration reveal, scoring, and AI._
 
 ## 6. Turn and production
 
-- [ ] Turn order, phases, and resource production
+- [x] Match initialization from completed setup (player order, setup grants, piece-supply
+      deductions, resource bank)
+- [x] Turn phases (`startTurn` → `roll` → `resolveProduction` → `trade` → `build` →
+      `endTurn`, plus `crisisPending` entry on a roll of 7)
+- [x] Deterministic two-dice rolling via the seeded random service
+- [x] Resource production from visible producing sectors and adjacent outposts, aggregated
+      per player and per resource
+- [x] Finite resource bank with all-or-nothing shortage handling per resource
+- [x] Deterministic domain events (`TurnStarted`, `DiceRolled`, `SectorProduced`,
+      `ResourcesGranted`, `ResourceShortage`, `ProductionResolved`, `TurnEnded`)
+- [x] Turn advancement: player-order wrap and turn-number increment
+- [x] Verified 2026-07-29 (275/275 unit tests passing)
+
+_Deliberately excluded: discard, Void Marauder/theft, trading, construction actions, colonies,
+nexus, sector reveal, scoring, and AI._
 
 ## 7. Crisis system
 
