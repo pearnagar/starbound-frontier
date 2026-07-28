@@ -1,88 +1,76 @@
-import { listSectors } from '../board/board'
-import { createBoardTopology, getSectorsAdjacentToVertex } from '../board/board-topology'
-import { hexCoordinateKey, hexCoordinatesEqual, type HexCoordinate } from '../board/hex-coordinate'
-import { getSectorResourceType, type Sector } from '../board/sector'
-import { getStructureProductionValue, type Structure } from '../buildings/structure'
+import {
+  getColonySiteAt,
+  listColonySites,
+  planetMatchesRoll,
+  type Planet,
+  type PlanetId,
+  type SpaceBoard,
+} from '../board/space-board'
+import { getStructureProductionValue } from '../buildings/structure'
 import type { PlayerId } from '../types/ids'
 import {
   createEmptyResourceInventory,
   RESOURCE_TYPES,
   type ResourceInventory,
 } from '../types/resources'
-import type { Match } from './match'
+import { listSiteStructures, type Match } from './match'
 
-/** Per-player resource grants and per-resource total demand for one production resolution. */
+/** Per-player grants and per-resource totals for one production resolution. */
 export type ProductionDemand = Readonly<{
-  /** Resources each player would receive if the bank can supply them. */
   grantsByPlayer: Readonly<Record<string, ResourceInventory>>
-  /** Total units of each resource demanded across all players. */
   totalDemand: ResourceInventory
-  /** Per-sector detail, useful for SectorProduced events. */
-  producingSectors: readonly Readonly<{
-    sector: Sector
-    /** Number of structures touching this sector that produced. */
+  /** Per-planet detail for events. */
+  producingPlanets: readonly Readonly<{
+    planet: Planet
+    /** Structures adjacent to this planet that produced. */
     structureCount: number
-    /** Total production units touching this sector (Outpost 1 / Colony 2 / Nexus 3). */
+    /** Cards produced — one per adjacent Colony or Spaceport. */
     unitCount: number
   }>[]
-  /** Otherwise-matching sectors that produced nothing because the Marauder occupies them. */
-  blockedSectors: readonly Sector[]
 }>
 
 /**
- * Computes what every structure adjacent to a rolled, visible, producing
- * sector would earn — before checking the bank. Adjacency is resolved through
- * the board topology (corner → sectors index, used in reverse via each
- * structure's own vertex). Each structure yields its production value
- * (Outpost 1 / Colony 2 / Nexus 3) in the sector's resource. A sector occupied
- * by the Void Marauder (`marauderCoordinate`) is excluded from production but
- * still reported via `blockedSectors` so callers can emit an observable event.
+ * Computes what every Colony and Spaceport adjacent to a rolled planet earns.
+ * Each qualifying structure receives exactly 1 card — a Spaceport produces the
+ * same single card as a Colony. Planets without a revealed disc, and planets
+ * blocked by a hazard, never produce.
  */
 export function getProductionDemand(match: Match, rollTotal: number): ProductionDemand {
-  const topology = createBoardTopology(match.board)
+  const board: SpaceBoard = match.board
   const grantsByPlayer = new Map<string, Record<string, number>>()
   const totalDemand: Record<string, number> = { ...createEmptyResourceInventory() }
-  const producingSectorsByKey = new Map<string, { sector: Sector; structures: Structure[] }>()
-  const blockedSectorsByKey = new Map<string, Sector>()
+  const producingByPlanet = new Map<string, { planet: Planet; structureCount: number }>()
 
-  // For each placed structure, look up (via the topology) the sectors
-  // touching its corner, then keep only those that are visible and rolled
-  // this turn.
-  for (const structure of Object.values(match.structures)) {
-    const touchingSectors = getSectorsAdjacentToVertex(topology, structure.vertexId)
-    for (const sector of touchingSectors) {
-      if (sector.visibility !== 'visible') {
-        continue
-      }
-      if (sector.productionNumber === undefined || sector.productionNumber !== rollTotal) {
-        continue
-      }
-      const resource = getSectorResourceType(sector.type)
-      if (resource === undefined) {
+  for (const structure of listSiteStructures(match)) {
+    const units = getStructureProductionValue(structure.type)
+    if (units === 0) {
+      continue
+    }
+    const site = getColonySiteAt(board, structure.intersectionId)
+    if (site === undefined) {
+      continue
+    }
+
+    for (const planetId of site.planetIds) {
+      const planet = board.planets[planetId]
+      if (planet === undefined || !planetMatchesRoll(planet, rollTotal)) {
         continue
       }
 
-      const key = hexCoordinateKey(sector.coordinate)
-      if (isMarauderBlocked(sector.coordinate, match.marauderCoordinate)) {
-        blockedSectorsByKey.set(key, sector)
-        continue
-      }
-
-      const entry = producingSectorsByKey.get(key)
-      if (entry === undefined) {
-        producingSectorsByKey.set(key, { sector, structures: [structure] })
+      const existingEntry = producingByPlanet.get(planet.id)
+      if (existingEntry === undefined) {
+        producingByPlanet.set(planet.id, { planet, structureCount: 1 })
       } else {
-        entry.structures.push(structure)
+        existingEntry.structureCount += 1
       }
 
-      const units = getStructureProductionValue(structure.type)
-      const existing = grantsByPlayer.get(structure.ownerId)
-      const playerGrant = existing ?? { ...createEmptyResourceInventory() }
-      playerGrant[resource] = (playerGrant[resource] ?? 0) + units
-      if (existing === undefined) {
-        grantsByPlayer.set(structure.ownerId, playerGrant)
+      const existingGrant = grantsByPlayer.get(structure.ownerId)
+      const grant = existingGrant ?? { ...createEmptyResourceInventory() }
+      grant[planet.resource] = (grant[planet.resource] ?? 0) + units
+      if (existingGrant === undefined) {
+        grantsByPlayer.set(structure.ownerId, grant)
       }
-      totalDemand[resource] = (totalDemand[resource] ?? 0) + units
+      totalDemand[planet.resource] = (totalDemand[planet.resource] ?? 0) + units
     }
   }
 
@@ -91,52 +79,46 @@ export function getProductionDemand(match: Match, rollTotal: number): Production
     grantsByPlayerRecord[playerId] = grant as ResourceInventory
   }
 
-  // Deterministic order matches board sector iteration order, not structure
-  // insertion order, so events replay identically regardless of Object.values
-  // ordering quirks.
-  const producingSectors = listSectors(match.board)
-    .map((sector) => producingSectorsByKey.get(hexCoordinateKey(sector.coordinate)))
-    .filter((entry): entry is { sector: Sector; structures: Structure[] } => entry !== undefined)
-    .map((entry) => ({
-      sector: entry.sector,
-      structureCount: entry.structures.length,
-      unitCount: entry.structures.reduce(
-        (sum, structure) => sum + getStructureProductionValue(structure.type),
-        0,
-      ),
-    }))
+  // Ordered by board colony-site iteration rather than structure insertion, so
+  // replaying the same match emits identical event ordering.
+  const seen = new Set<string>()
+  const orderedPlanetIds: PlanetId[] = []
+  for (const site of listColonySites(board)) {
+    for (const planetId of site.planetIds) {
+      if (!seen.has(planetId)) {
+        seen.add(planetId)
+        orderedPlanetIds.push(planetId)
+      }
+    }
+  }
 
-  const blockedSectors = listSectors(match.board)
-    .map((sector) => blockedSectorsByKey.get(hexCoordinateKey(sector.coordinate)))
-    .filter((sector): sector is Sector => sector !== undefined)
+  const producingPlanets = orderedPlanetIds
+    .map((planetId) => producingByPlanet.get(planetId))
+    .filter((entry): entry is { planet: Planet; structureCount: number } => entry !== undefined)
+    .map((entry) => ({
+      planet: entry.planet,
+      structureCount: entry.structureCount,
+      unitCount: entry.structureCount,
+    }))
 
   return {
     grantsByPlayer: grantsByPlayerRecord,
     totalDemand: totalDemand as ResourceInventory,
-    producingSectors,
-    blockedSectors,
+    producingPlanets,
   }
 }
 
-function isMarauderBlocked(
-  sectorCoordinate: HexCoordinate,
-  marauderCoordinate: HexCoordinate,
-): boolean {
-  return hexCoordinatesEqual(sectorCoordinate, marauderCoordinate)
-}
-
-/** Resources this player would receive from a demand computation, or an empty inventory. */
 export function getPlayerGrant(demand: ProductionDemand, playerId: PlayerId): ResourceInventory {
   return demand.grantsByPlayer[playerId] ?? createEmptyResourceInventory()
 }
 
 /**
- * Resource types whose total demand exceeds the bank's current supply —
- * these are withheld from everyone this resolution (all-or-nothing).
+ * Resource types whose total demand exceeds the Supply — withheld from
+ * everyone this resolution rather than distributed partially.
  */
 export function getShortResources(
   demand: ProductionDemand,
-  bankQuantities: ResourceInventory,
+  supplyQuantities: ResourceInventory,
 ): readonly (typeof RESOURCE_TYPES)[number][] {
-  return RESOURCE_TYPES.filter((type) => demand.totalDemand[type] > bankQuantities[type])
+  return RESOURCE_TYPES.filter((type) => demand.totalDemand[type] > supplyQuantities[type])
 }

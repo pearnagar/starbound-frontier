@@ -29,268 +29,146 @@ imports from any other layer.
 
 ## Current state
 
-`src/game/domain/` contains the pure domain model (`types/`), board geometry and generation
-(`board/`), the seeded random source (`random/`), minimal structure ownership
-(`buildings/`, `routes/`), initial setup placement (`setup/`), and match/turn state
-(`turns/`). `application/`, `infrastructure/`, and `presentation/` are still empty layer
-folders.
+`src/game/domain/` contains the pure domain model: gameplay types (`types/`), the data-driven
+board and flight graph (`board/`), the seeded random source (`random/`), rule constants
+(`rules/`), structures and ships (`buildings/`), beginner setup (`setup/`), supply trading
+(`trading/`), scoring (`scoring/`), and match/turn state (`turns/`). `application/`,
+`infrastructure/`, and `presentation/` are still empty layer folders.
+
+The domain was substantially rewritten by the rulebook alignment refactor; see
+`docs/RULEBOOK_ALIGNMENT.md` for what replaced what.
 
 ### Seeded randomness
 
 `src/game/domain/random/` holds a pure mulberry32 generator (`createSeededRandom`) plus
-`deriveAttemptSeed` for reproducible retries. It lives in the domain because it is pure
-arithmetic with no I/O, and `domain/` may not import from `infrastructure/`. Anything that
-genuinely touches the outside world — choosing a fresh seed at app start, persisting it —
-belongs in `infrastructure/random` later. `Math.random()` is never used.
+`deriveAttemptSeed`. It lives in the domain because it is pure arithmetic with no I/O, and
+`domain/` may not import from `infrastructure/`. Anything that genuinely touches the outside
+world — choosing a fresh seed at app start, persisting it — belongs in `infrastructure/random`
+later. `Math.random()` is never used.
 
-## Board geometry
+Every consumer threads the generator state explicitly: a function takes the current
+`randomState` and returns the next one alongside its result, rather than sharing a mutable
+generator. This is what makes the Reserve shuffle, dice, starting-player rolls, and weighted
+theft all replayable from a single seed.
 
-The geometry modules (`hex-coordinate.ts`, `lattice.ts`, `vertex.ts`, `edge.ts`) hold
-coordinate math and stable identities only. They know nothing about sectors, content, or
-rendering, so board generation builds on them rather than the other way round.
+## Board model
 
-### Axial coordinates and direction order
+The board is **data, not geometry**. The reference beginner layout is published only as a
+diagram, so no module generates or infers a topology — a `BoardConfiguration` supplies the
+whole thing from outside the domain (see `docs/RULEBOOK_GAPS.md`).
 
-Hexes use axial coordinates `{ q, r }` (finite integers only); the implied cube coordinate
-is `(q, -q - r, r)`. Directions are indexed **clockwise from East**, using screen
-conventions (+x right, +y down):
+`space-board.ts` defines the vocabulary: `Planet`, `PlanetarySystem`, `HomeColonySystem`,
+`AlienOutpost`, `SpaceSector`, `Intersection`, `ColonySite`, `SpaceportSite`, `Dock`, and
+`NumberDisc`. Identity is a branded string id per entity, and every collection is a keyed
+record so lookups stay O(1) and the whole board serializes as-is.
 
-| Index | Direction | Axial offset |
-| ----- | --------- | ------------ |
-| 0     | East      | (+1, 0)      |
-| 1     | Southeast | ( 0, +1)     |
-| 2     | Southwest | (-1, +1)     |
-| 3     | West      | (-1, 0)      |
-| 4     | Northwest | ( 0, -1)     |
-| 5     | Northeast | (+1, -1)     |
+**Adjacency** lives on `Intersection.adjacentIntersectionIds` as an explicit mirrored edge
+list. `validateSpaceBoard` rejects an asymmetric link, a self-link, or a reference to an
+unknown id, which is what makes the graph safe for the future flight system to trust.
+`validateBoardComposition` separately checks the published component counts (4 home systems,
+8 planetary systems, 4 outposts, 15 sectors, 5 docks per outpost), so a deliberately small
+test fixture can still be structurally valid without pretending to be a full board.
 
-Directions `d` and `(d + 3) % 6` are opposites. Hexes are pointy-top, so corners sit at
-North and South.
+**Production eligibility** is a property of the planet, not the board: `isPlanetProducing`
+requires a revealed disc and no hazard. A planet carrying a pirate base or ice planet has no
+disc at all — `validateSpaceBoard` rejects a planet holding both — so a blocked planet cannot
+accidentally produce.
 
-### Canonical corner and edge identity
+`flight-graph.ts` holds read-only graph queries (adjacency, BFS distance, range, connectivity).
+It deliberately contains no movement rules; ship movement is a later milestone, and shipping a
+half-implemented mover would be worse than shipping none.
 
-A corner is shared by up to three hexes and an edge by up to two, so identity cannot be
-`{ hex, cornerIndex }` — each touching hex would mint a different id for the same physical
-point. Instead, geometry is derived on a **tripled cube lattice**: hex centres are stored at
-three times their cube coordinate (`(3q, -3q - 3r, 3r)`), which leaves room for all six
-corners to land on exact integer points of that same lattice.
+## Pieces, structures, and ships
 
-- **`VertexId`** — the `"x,y,z"` key of the corner's lattice point.
-- **`EdgeId`** — its two endpoint `VertexId`s joined in lexicographic order, so `(a, b)` and
-  `(b, a)` produce the identical string.
+The physical piece model drives the type model. A player's `PieceSupply` tracks only the four
+real piece kinds (9 Colonies, 7 Trade Stations, 3 Transport Ships, 3 Shipyards). Composite
+pieces are _relationships_, not stored types:
 
-Because every corner resolves to integers, two hexes touching the same physical corner
-compute the _same_ triple, so equality is plain `===` with no floating-point tolerance and
-no duplicate ids. Corner lattice points are always congruent to `(1,1,1)` or `(2,2,2)`
-modulo 3, while hex centres are congruent to `(0,0,0)` — the parities never collide, which
-is what makes corner adjacency an exact integer test.
+- Transport Ship + Colony = Colony Ship
+- Transport Ship + Trade Station = Trade Ship
+- Colony + Shipyard = Spaceport
 
-Rendered pixel positions are deliberately _not_ part of this layer; they belong to a later
-presentation milestone. Floating-point coordinates are never used as authoritative ids.
+This is why building a Colony Ship deducts a Transport Ship **and** a Colony, and why upgrading
+to a Spaceport deducts only a Shipyard — the Colony is already on the board and stays part of
+the Spaceport. Modelling it the other way (a `spaceport` piece in supply) would have made the
+"a Spaceport is worth 2 points including its Colony" rule impossible to state cleanly.
 
-## Board generation
+`Structure` is a discriminated union split by _where it sits_: `SiteStructure` (Colony or
+Spaceport, on an intersection) and `TradeStationStructure` (on a dock at an outpost). They are
+stored in separate records on `Match` because they are keyed differently and never compete for
+the same position.
 
-Shape and content are separate concerns: `board-shape.ts` produces coordinates only, and
-generation assigns content onto them.
+A Spaceport replaces its Colony in `Match.structures` rather than sitting alongside it, so
+scoring counts the site exactly once at 2 points and production grants it exactly 1 resource.
 
-**Shape.** A radius-3 hexagon centred on the origin — `3r² + 3r + 1 = 37` sectors, inside
-the 30-40 target. Coordinates come out ring by ring, origin first, so ordering is stable.
+## Supply and Reserve
 
-**Sector distribution** (`board-configuration.ts`, the single source of these numbers):
-6 each of alloy / plasma / cryonite / biofiber, 3 quantum rift, 6 empty space, 3 anomaly,
-and 1 central star fixed at the origin — 27 producing, 10 non-producing. Quantum Rift is
-deliberately rarer than every basic resource, and validation enforces that.
+`turns/resource-bank.ts` holds two deliberately different stores:
 
-**Production tokens.** 27 tokens over the values 2-6 and 8-12 (never 7), weighted toward the
-middle: one 2 and one 12, four 6s and four 8s, two 11s, three of everything else.
-`getProductionProbabilityWeight` exposes each value's two-dice likelihood for later UI use.
+- **`ResourceSupply`** — face up, modelled as per-resource counts. Order is meaningless.
+- **`ReservePile`** — face down, modelled as an _ordered list of cards_. Order is
+  authoritative: draws come off the front, and the order comes from a seeded shuffle.
 
-The 6/8 adjacency rule is satisfied _by construction_ rather than by rejection: the high
-tokens are placed first onto a mutually non-adjacent subset of producing sectors, after
-which the remaining tokens cannot violate the rule. Reject-and-retry alone would have
-succeeded on roughly 2% of shuffles; this succeeds on the first attempt for almost every
-seed.
+They are separate types rather than one bank because the rules treat them differently — you
+trade with the Supply and draw blind from the Reserve — and because a count-based model cannot
+represent "the next card" at all.
 
-**Hidden sectors.** Six outer-ring sectors start hidden, chosen deterministically from the
-seed. Hidden sectors keep their generated type and production number — visibility is a
-separate flag and never changes the underlying assignment. The central star sits at the
-origin, so it can never be selected. Reveal behaviour is not implemented.
-
-**Retry.** `generateBoard` runs attempts 1..`maxGenerationAttempts` (default 25), each with
-a seed derived from `(seed, attempt)`, validating every candidate with the same unrelaxed
-`validateBoard`. The winning attempt number is recorded on the board. Exhausting the limit
-returns a `BOARD_GENERATION_FAILED` result carrying the last attempt's validation errors.
-Identical seed and configuration always yield identical board state, including the attempt
-number.
-
-## Initial setup placement
-
-`src/game/domain/setup/` sequences the opening placements. It reads the board through
-`BoardTopology` (`board/board-topology.ts`), a derived index of every corner, edge, and the
-sectors touching each corner — built once per board so placement checks never re-walk it.
-
-**Snake order.** `getSetupPlacementOrder` returns seat order followed by its reverse, so
-`[P1 P2 P3 P4]` becomes `P1 P2 P3 P4 P4 P3 P2 P1`. One entry per outpost + route pair, two
-per player.
-
-**State transitions.** `SetupState` is an immutable snapshot; every transition returns a new
-one. Placing an outpost records it, keeps the same active player, switches `expects` to
-`'route'`, and stores `pendingOutpostVertexId`. Placing the route records it, clears the
-pending corner, increments that player's completed pairs, grants starting resources if that
-was their second pair, advances `stepIndex`, switches `expects` back to `'outpost'`, and
-sets `complete` once the final entry is done. The sequence never advances on a half-finished
-pair — the route is mandatory.
-
-**Distance rule.** An outpost is illegal on a corner that is occupied or _directly connected
-by an edge_ to an existing outpost. Corners two or more steps away stay legal. During setup
-an outpost need not connect to any existing route.
-
-**Hidden-sector restriction.** A setup outpost must touch at least one visible sector, so a
-player cannot claim a corner surrounded entirely by unrevealed space. Reveal behaviour is
-not implemented.
-
-**Second-outpost resources.** Starting resources are granted only when a player's _second_
-pair completes, and only once its route is down — not at outpost time. The grant is one
-resource per visible producing sector touching that second corner; hidden sectors yield
-nothing even when their underlying type produces, and empty space, anomalies, and the
-central star never yield. `placeSetupRoute` returns the delta as an explicit
-`SetupResourceGrant` rather than mutating any player, so applying it stays the caller's job.
+`drawFromReserve` rebuilds the pile in place when it empties mid-draw (8 of each resource,
+reshuffled) and reports `rebuilt` so callers can observe it. Draw results are hidden
+information: events record a count, never the cards.
 
 ## Match and turn state
 
-`src/game/domain/turns/` holds the immutable `Match` state and normal-turn transitions that
-follow completed setup.
+`Match` is one immutable, serializable snapshot; every transition returns a new one. IDs and
+seeds are supplied by callers, never minted inside the domain, except `nextShipNumber` — a
+monotonic counter that lets ship ids be derived without a clock or an RNG draw.
 
-**Initialization.** `createMatchFromCompletedSetup` validates a finished `SetupState`
-(complete, consistent player order, each seat with exactly two placed outposts/routes and
-matching completed-pair counts), then builds the initial `Match`: player order and the first
-active player carried over unchanged, setup resource grants applied to player inventories,
-two outposts and two trade routes deducted from each player's piece supply, setup outposts
-converted into `Structure` records (`type: 'outpost'`) on `Match.structures`, and a fresh
-`ResourceBank` with the setup grants already deducted from it. IDs and random seeds are
-supplied by the caller, never generated inside the domain.
+**Phases.** `startTurn → roll → resolveProduction → tradeAndBuild → flight → endTurn`, with
+`sevenPending` branching off the roll. Trading and building share `tradeAndBuild` and may be
+interleaved without limit, which is why construction never advances the phase itself.
 
-**Phases.** A closed `TurnPhase` union — `startTurn`, `roll`, `resolveProduction`,
-`crisisPending`, `trade`, `build`, `endTurn` — drives normal flow
-`startTurn → roll → resolveProduction → trade → build → endTurn`. `trade` is a phase marker
-only; no bank/player trading rules exist yet. `build` now hosts real construction actions (see
-Construction below). A roll totaling 7 enters `crisisPending` and stops there — discard,
-Marauder movement, and theft belong to the Crisis System milestone. `endTurn` advances to the
-next player, wrapping after the last seat and incrementing `turnNumber` only on that wrap.
+**Production.** `getProductionDemand` walks each Colony/Spaceport, resolves its colony site,
+and grants 1 resource per adjacent planet matching the roll. Demand is aggregated per player
+and per resource before the Supply is touched; a resource whose total demand exceeds the Supply
+is withheld from everyone that roll, all-or-nothing, while other resources resolve normally.
 
-**Dice.** `rollTwoDice` draws two 1-6 values from the seeded random service
-(`domain/random`) as a pure function of the match's current `randomState`, returning both the
-result and the next state to store — no `Math.random()`, clock, or shared mutable generator.
+**Reserve entitlement.** Only the roller draws, by victory points (4-7 → 2, 8-9 → 1, 10+ → 0),
+resolved inside `resolveProduction` so the entitlement cannot be skipped or taken twice.
 
-**Production.** `getProductionDemand` finds every structure whose corner (via
-`BoardTopology`) touches a visible sector matching the rolled number, and grants that sector's
-resource in units equal to the structure's production value (Outpost 1, Colony 2, Nexus 3;
-`getStructureProductionValue`). Demand is aggregated per player and per resource before
-touching the bank.
+**Roll of 7.** `SevenState` is a discriminated union — `discarding | selectingTarget |
+drawing` — present only while work remains. Discard requirements are computed once, when the 7
+is rolled, so one player's discard cannot change another's obligation. Theft builds a flat
+weighted list (one entry per card held) and draws with the seeded generator, making selection
+exactly proportional to hand size and fully replayable; the stolen resource is deliberately
+absent from the emitted event. There is no board token: the Void Marauder does not exist in
+these rules.
 
-**Bank and shortage.** `ResourceBank` holds one configurable initial quantity per resource
-(default 19 — see `docs/DECISIONS.md`). `resolveProduction` computes, per resource type,
-whether total demand exceeds the bank's current supply; if so, that resource is withheld
-from every player this resolution (all-or-nothing), while unaffected resources still resolve
-normally. The bank only ever decreases and never goes negative.
-
-**Events.** Every transition appends minimal serializable events
-(`TurnStarted`, `DiceRolled`, `SectorProduced`, `ResourcesGranted`, `ResourceShortage`,
-`ProductionResolved`, `TurnEnded`) to `Match.events`, each carrying a deterministic
-`sequence` assigned from `Match.eventSequence` — no timestamps.
-
-## Crisis system
-
-A roll of 7 enters `crisisPending` and, instead of stopping there, `rollDice` immediately
-calls `startCrisis` (`src/game/domain/turns/crisis-transitions.ts`), which computes the
-milestone's four-step flow: discard, Marauder movement, steal-target selection, and theft.
-
-**Crisis state.** `Match.crisisState` is an optional discriminated union
-(`src/game/domain/turns/crisis-state.ts`): `discarding | movingMarauder |
-selectingStealTarget | stealing`. It is `undefined` whenever no crisis is active, so a match
-can never claim two crisis sub-states are pending at once. `Match.marauderCoordinate` is a
-separate, always-present field — the Marauder exists on the board even outside a crisis.
-
-**Discard.** Required counts (`floor(total / 2)` for any player holding more than 7 cards)
-are fixed once, at crisis start, from each player's inventory at that moment — they do not
-change as other players' hands change mid-crisis. `submitCrisisDiscard` enforces an exact
-total, non-negative integer quantities, and sufficient ownership per resource; accepted
-discards move resources from the player to the bank via the new `addToBank` (the inverse of
-`deductFromBank`, added alongside this milestone). Discards may be submitted in any order;
-the sub-state advances to `movingMarauder` once every required player has submitted, or
-immediately at crisis start if nobody was over the threshold.
-
-**Marauder movement.** Legal only from `movingMarauder`, only by the active player, only to a
-different sector that exists on the board. `getLegalMarauderDestinations` lists every sector
-coordinate but the current one. Moving computes eligible steal targets in the same step.
-
-**Production blocking.** `getProductionDemand` now also returns `blockedSectors` — otherwise-
-matching, visible, rolled sectors that produced nothing solely because
-`Match.marauderCoordinate` occupies them. `resolveProduction` emits one
-`ProductionBlockedByMarauder` event per blocked sector before its normal `SectorProduced`/
-`ResourcesGranted` events, so the block is observable without changing unrelated production
-behavior.
-
-**Steal eligibility and theft.** Eligible targets are unique opponents (never the active
-player) with at least one outpost touching the Marauder's new sector and at least one
-resource; see `docs/DECISIONS.md` for why a lone eligible target is still passed explicitly
-rather than auto-resolved. `stealCrisisResource` builds a flat weighted list (one entry per
-card held) and draws from it with the existing seeded random service, so selection
-probability is exactly proportional to cards held and fully deterministic from
-`Match.randomState`. The stolen resource type is never included in the public `ResourceStolen`
-event, keeping the target's hand composition private from the active player.
-
-**Completion.** `isCrisisComplete` is true once there is no crisis state left to resolve
-(including "no crisis was ever active"); `completeCrisis` clears `crisisState` and advances to
-`trade`, preserving `activePlayerId` and `lastDiceResult`. Normal phase transitions
-(`advanceToTradePhase`, `advanceToBuildPhase`, `endTurn`) already require their specific phase,
-so they reject on their own while the match sits in `crisisPending` — no extra guard was
-needed there.
+**Events.** Minimal serializable records with a deterministic `sequence` and no timestamps.
+Hidden information never enters an event.
 
 ## Construction
 
-`src/game/domain/turns/construction.ts` and `construction-config.ts` implement normal-turn
-building, legal only during `build` with no unresolved crisis.
+`turns/construction.ts` implements building, legal only during `tradeAndBuild` and only for the
+active player. Every action validates fully before mutating anything, then deducts the cost and
+returns it to the Supply atomically.
 
-**Structure model.** `src/game/domain/buildings/structure.ts` defines one discriminated
-`Structure` type (`type: 'outpost' | 'colony' | 'nexus'`, `vertexId`, `ownerId`) rather than
-parallel per-type models. `Match.structures` (renamed from the setup-only `Match.outposts`)
-holds every placed structure keyed by canonical `VertexId`; `SetupState.outposts` is unrelated
-and still uses the pre-existing minimal `Outpost` setup type. `getStructureProductionValue`
-maps each type to its production units (Outpost 1, Colony 2, Nexus 3).
+All costs and limits live in `rules/rules-config.ts`. No resource literal appears in a
+validator or transition, so a cost change touches exactly one file. The same module holds the
+victory target, reserve tiers, trade rates, and upgrade caps.
 
-**Costs.** `construction-config.ts` holds every construction cost in one typed map
-(`getBuildCost`), keyed by `ConstructionAction` (`tradeRoute | outpost | colony | nexus`), so
-validators and transitions never repeat resource literals.
+The 2:1 supply trade rate is derived from the resource's _role_ (`GOODS_RESOURCE_TYPE`), not
+from owning a structure — the improved rate belongs to the goods-equivalent resource itself.
 
-**Trade routes.** `getLegalTradeRouteEdges` / `validateTradeRouteBuild` / `buildTradeRoute`.
-An edge is legal when it is unoccupied, on the board, affordable, a Trade Route remains in the
-player's piece supply, and at least one endpoint establishes connectivity — a player-owned
-structure there, or a player-owned route touching it (an opponent structure at that endpoint
-does not establish connectivity, but does not block an _already_-connected other endpoint
-either).
+## Scoring
 
-**Outposts.** `getLegalOutpostVertices` / `validateOutpostBuild` / `buildOutpost`. A corner is
-legal when on the board, unoccupied, has no directly adjacent structure, touches at least one
-visible sector, and touches at least one of the player's own routes — reusing the same
-adjacency/visibility checks as setup placement, but additionally requiring route connectivity
-(setup has no such requirement). No resources are granted.
+`scoring/scoring.ts` recomputes points from board state rather than trusting a counter. Awards
+that no implemented system grants yet (Friendship Markers, cleared-hazard tokens) are passed in
+as an explicit `PlayerAwards` argument defaulting to zero, so scoring never invents a source it
+cannot see. `Player.victoryPoints` remains stored because the physical victory-point track is
+itself authoritative for Friendship Marker transfers.
 
-**Colony/Nexus upgrades.** `validateColonyUpgrade` / `upgradeToColony` and
-`validateNexusUpgrade` / `upgradeToNexus` replace the owner's own Outpost/Colony in place on
-the same vertex. Piece supply moves in both directions: upgrading returns the previous tier's
-piece to supply while consuming one of the next tier (e.g. Colony→Nexus consumes 1 Nexus and
-returns 1 Colony).
-
-**Bank-trade rate.** `getPlayerBankTradeRate` derives 3:1 vs. the standard 4:1 from whether the
-player currently owns any Nexus structure — not stored on `Player`, so it can never drift out
-of sync with the board. Bank-trading execution itself is out of scope.
-
-**Spending.** Every build/upgrade validates the full cost before mutating anything
-(`canAffordBuild`), then atomically deducts it from the player and returns it to the bank via
-`addToBank`, emitting one `ResourcesSpent` event. Piece-supply changes emit
-`PieceSupplyChanged`. Construction does not advance `Match.phase` — the same player may build
-repeatedly within one `build` phase until they can no longer afford or legally place anything.
+Victory is checked only for the active player, in `endTurn` — a player cannot win on someone
+else's turn.
 
 ## Planned structure (created milestone-by-milestone, not yet present)
 
@@ -304,17 +182,18 @@ src/
     domain/
       actions/
       ai/
+      board/
       buildings/
+      encounters/
       exploration/
-      players/
-      resources/
-      routes/
+      friendship/
+      random/
       rules/
       scoring/
+      setup/
       trading/
       turns/
       types/
-      victory/
 
     infrastructure/
       audio/
@@ -331,6 +210,6 @@ src/
       tutorial/
 ```
 
-These subfolders will be created when the milestone that needs them begins (see
+These subfolders are created when the milestone that needs them begins (see
 `docs/IMPLEMENTATION_PLAN.md`), not pre-scaffolded — an empty folder with no clear owner is
 harder to reason about than one created alongside the code that fills it.

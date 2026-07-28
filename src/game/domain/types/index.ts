@@ -21,14 +21,40 @@ export {
   type PlayerControlType,
 } from './player-configuration'
 
-export { createInitialPieceSupply, isValidPieceSupply, type PieceSupply } from './piece-supply'
+export {
+  adjustPieceSupply,
+  createInitialPieceSupply,
+  hasPieces,
+  isValidPieceSupply,
+  PIECE_SUPPLY_KEYS,
+  type PieceKind,
+  type PieceSupply,
+} from './piece-supply'
 
 export {
+  addUpgrade,
+  canAddUpgrade,
+  createInitialMothershipState,
+  getUpgradeCount,
+  isValidMothershipState,
+  type MothershipState,
+} from './mothership'
+
+export {
+  addResourceInventories,
   createEmptyResourceInventory,
+  createResourceInventory,
+  getResourceRole,
+  getResourceTypeForRole,
   getTotalResourceCount,
+  GOODS_RESOURCE_TYPE,
+  hasAtLeastResources,
   isValidResourceInventory,
+  RESOURCE_ROLES,
   RESOURCE_TYPES,
+  subtractResourceInventories,
   type ResourceInventory,
+  type ResourceRole,
   type ResourceType,
 } from './resources'
 

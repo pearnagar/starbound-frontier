@@ -1,98 +1,88 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addResourceInventories,
   createEmptyResourceInventory,
+  createResourceInventory,
+  getResourceRole,
+  getResourceTypeForRole,
   getTotalResourceCount,
+  GOODS_RESOURCE_TYPE,
+  hasAtLeastResources,
   isValidResourceInventory,
+  RESOURCE_ROLES,
   RESOURCE_TYPES,
-  type ResourceInventory,
+  subtractResourceInventories,
 } from './resources'
 
-describe('RESOURCE_TYPES', () => {
-  it('contains exactly the five Starbound Frontier resources', () => {
+describe('resource role mapping', () => {
+  it('maps every serialized identifier to its gameplay role', () => {
+    expect(getResourceRole('alloy')).toBe('ore')
+    expect(getResourceRole('plasma')).toBe('fuel')
+    expect(getResourceRole('cryonite')).toBe('carbon')
+    expect(getResourceRole('biofiber')).toBe('food')
+    expect(getResourceRole('quantumCore')).toBe('goods')
+  })
+
+  it('round-trips role and type in both directions', () => {
+    for (const type of RESOURCE_TYPES) {
+      expect(getResourceTypeForRole(getResourceRole(type))).toBe(type)
+    }
+    for (const role of RESOURCE_ROLES) {
+      expect(getResourceRole(getResourceTypeForRole(role))).toBe(role)
+    }
+  })
+
+  it('assigns the goods role to quantumCore', () => {
+    expect(GOODS_RESOURCE_TYPE).toBe('quantumCore')
+  })
+
+  it('keeps the serialized identifiers unchanged', () => {
     expect(RESOURCE_TYPES).toEqual(['alloy', 'plasma', 'cryonite', 'biofiber', 'quantumCore'])
   })
-
-  it('has a deterministic iteration order across calls', () => {
-    expect([...RESOURCE_TYPES]).toEqual([...RESOURCE_TYPES])
-    expect(RESOURCE_TYPES.join(',')).toBe('alloy,plasma,cryonite,biofiber,quantumCore')
-  })
 })
 
-describe('createEmptyResourceInventory', () => {
-  it('contains every resource type', () => {
-    const inventory = createEmptyResourceInventory()
-    for (const type of RESOURCE_TYPES) {
-      expect(inventory).toHaveProperty(type)
-    }
+describe('resource inventories', () => {
+  it('creates an empty inventory with every type at zero', () => {
+    const empty = createEmptyResourceInventory()
+    expect(getTotalResourceCount(empty)).toBe(0)
+    expect(RESOURCE_TYPES.every((type) => empty[type] === 0)).toBe(true)
   })
 
-  it('initializes every quantity to zero', () => {
-    const inventory = createEmptyResourceInventory()
-    for (const type of RESOURCE_TYPES) {
-      expect(inventory[type]).toBe(0)
-    }
+  it('fills omitted types with zero when built from a partial', () => {
+    const inventory = createResourceInventory({ alloy: 2, quantumCore: 1 })
+    expect(inventory.alloy).toBe(2)
+    expect(inventory.quantumCore).toBe(1)
+    expect(inventory.plasma).toBe(0)
   })
 
-  it('returns an independent object on each call', () => {
-    const a = createEmptyResourceInventory()
-    const b = createEmptyResourceInventory()
-    expect(a).not.toBe(b)
-    expect(a).toEqual(b)
-  })
-})
+  it('adds and subtracts without mutating either input', () => {
+    const left = createResourceInventory({ alloy: 2 })
+    const right = createResourceInventory({ alloy: 1, plasma: 3 })
 
-describe('getTotalResourceCount', () => {
-  it('returns 0 for an empty inventory', () => {
-    expect(getTotalResourceCount(createEmptyResourceInventory())).toBe(0)
+    expect(addResourceInventories(left, right).alloy).toBe(3)
+    expect(addResourceInventories(left, right).plasma).toBe(3)
+    expect(left.alloy).toBe(2)
+    expect(right.plasma).toBe(3)
   })
 
-  it('returns the correct total across all resource types', () => {
-    const inventory: ResourceInventory = {
-      alloy: 3,
-      plasma: 1,
-      cryonite: 0,
-      biofiber: 4,
-      quantumCore: 2,
-    }
-    expect(getTotalResourceCount(inventory)).toBe(10)
-  })
-})
-
-describe('isValidResourceInventory', () => {
-  it('accepts an empty inventory', () => {
-    expect(isValidResourceInventory(createEmptyResourceInventory())).toBe(true)
+  it('clamps subtraction at zero', () => {
+    const result = subtractResourceInventories(
+      createResourceInventory({ alloy: 1 }),
+      createResourceInventory({ alloy: 5 }),
+    )
+    expect(result.alloy).toBe(0)
   })
 
-  it('accepts non-negative integer quantities', () => {
-    const inventory: ResourceInventory = {
-      alloy: 5,
-      plasma: 2,
-      cryonite: 0,
-      biofiber: 7,
-      quantumCore: 1,
-    }
-    expect(isValidResourceInventory(inventory)).toBe(true)
+  it('reports sufficiency per resource type', () => {
+    const held = createResourceInventory({ alloy: 3, plasma: 1 })
+    expect(hasAtLeastResources(held, createResourceInventory({ alloy: 3 }))).toBe(true)
+    expect(hasAtLeastResources(held, createResourceInventory({ alloy: 4 }))).toBe(false)
+    expect(hasAtLeastResources(held, createResourceInventory({ plasma: 1, alloy: 1 }))).toBe(true)
   })
 
-  it('rejects a negative quantity', () => {
-    const inventory: ResourceInventory = {
-      alloy: -1,
-      plasma: 0,
-      cryonite: 0,
-      biofiber: 0,
-      quantumCore: 0,
-    }
-    expect(isValidResourceInventory(inventory)).toBe(false)
-  })
-
-  it('rejects a fractional quantity', () => {
-    const inventory: ResourceInventory = {
-      alloy: 0,
-      plasma: 1.5,
-      cryonite: 0,
-      biofiber: 0,
-      quantumCore: 0,
-    }
-    expect(isValidResourceInventory(inventory)).toBe(false)
+  it('rejects negative and fractional quantities', () => {
+    expect(isValidResourceInventory(createResourceInventory({ alloy: 1 }))).toBe(true)
+    expect(isValidResourceInventory({ ...createEmptyResourceInventory(), alloy: -1 })).toBe(false)
+    expect(isValidResourceInventory({ ...createEmptyResourceInventory(), alloy: 1.5 })).toBe(false)
   })
 })

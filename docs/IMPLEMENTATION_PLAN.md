@@ -3,6 +3,10 @@
 Work proceeds one milestone at a time. A milestone's box is only checked once its code is
 written **and** verified (tests/build/lint run and passing) — not when planned.
 
+Milestones 1-8 were built against an earlier, incorrect rules model and were substantially
+replaced by the rulebook alignment refactor (Milestone 9). Their entries below record what
+survives; see `docs/RULEBOOK_ALIGNMENT.md` for the full migration table.
+
 ## 1. Foundation
 
 - [x] Vite + React + TypeScript app scaffolded, no nested project directory
@@ -12,160 +16,175 @@ written **and** verified (tests/build/lint run and passing) — not when planned
 - [x] Strict TypeScript enabled (`strict`, `noImplicitAny`, `noUncheckedIndexedAccess`,
       `noFallthroughCasesInSwitch`, `noImplicitReturns`, `noUnusedLocals`,
       `noUnusedParameters`, `exactOptionalPropertyTypes`, `forceConsistentCasingInFileNames`)
-- [x] Path aliases (`@/`, `@game/`, `@app/`, `@components/`, `@assets/`) working in
-      TypeScript, Vite, and Vitest
-- [x] Lean architecture folders created (`app`, `game/domain`, `game/application`,
-      `game/infrastructure`, `game/presentation`, `components`, `hooks`, `assets`, `styles`,
-      `tests`)
-- [x] Application shell renders (title, subtitle, status panel, version, "gameplay not yet
-      implemented" notice) with no fake gameplay controls
-- [x] Styling foundation (CSS variables, typography, spacing, radius, focus states, base
-      button, reduced-motion handling)
-- [x] Unit tests (Vitest + RTL) passing (2/2)
-- [x] Playwright configured; smoke test passing against production preview build
-- [x] ESLint + Prettier + EditorConfig configured, `lint`/`format:check` passing
+- [x] Path aliases working in TypeScript, Vite, and Vitest
+- [x] Lean architecture folders created
+- [x] Application shell renders with no fake gameplay controls
+- [x] Styling foundation
+- [x] ESLint + Prettier + EditorConfig configured
 - [x] Production build passing
-- [x] Git initialized locally (no commit yet — pending manual commit by the user)
-
-_(Verified 2026-07-28 — see `docs/PROJECT_STATUS.md` for the exact commands run and their
-results.)_
 
 ## 2. Domain model
 
-- [x] Core gameplay types and entities (resources, player identity/configuration, players,
-      piece supply) as pure TypeScript, with no React/PixiJS/browser-API/storage/sound
-      dependency, verified 2026-07-28 (35/35 unit tests passing, including an architectural
-      purity test)
+- [x] Core gameplay types as pure TypeScript with no React/PixiJS/browser dependency
+- [x] Resource identifiers and inventories
+- [x] Player identity and control configuration
+
+_Superseded in part by Milestone 9: piece supply, player victory points, and Mothership state
+were replaced._
 
 ## 3. Board geometry
 
-- [x] Axial hex coordinates, clockwise direction order, neighbours, and distance
-- [x] Canonical corner (`VertexId`) and edge (`EdgeId`) identities on a tripled cube
-      lattice — shared identity across touching hexes, no floating-point equality
-- [x] Hex → vertices / hex → edges mappings, edge endpoints, and adjacency helpers
-- [x] Verified 2026-07-28 (99/99 unit tests passing, including exact corner/edge counts and
-      Euler's formula for radius-0/1/2 clusters)
+- [x] Axial hex coordinates, canonical vertex/edge identity on a tripled cube lattice
 
-_Deliberately excluded: board shape, generation, sector types, placement, route ownership,
-and rendering._
+_Removed by Milestone 9. The corrected rules use an intersection graph, not hex geometry, so
+these modules were deleted rather than left as unused abstractions._
 
 ## 4. Board generation
 
-- [x] Pure seeded random source (`domain/random`, mulberry32) with deterministic shuffle,
-      indexed/integer selection, and per-attempt seed derivation
-- [x] Standard shape: radius-3 hexagon, 37 sectors, central star fixed at the origin
-- [x] Sector and production-token distributions held in one configuration object
-- [x] Production numbers 2-12 excluding 7, weighted toward 6/8, with no adjacent 6/8 pair
-- [x] Six deterministically chosen hidden outer-ring sectors that retain their content
-- [x] Board validator over the `DomainResult` convention, and bounded deterministic retry
-      that records the winning attempt
-- [x] Verified 2026-07-28 (177/177 unit tests passing)
+- [x] Pure seeded random source (`domain/random`, mulberry32) — **retained**
+- [x] Randomized 37-sector board generation
 
-_Deliberately excluded: sector reveal behaviour, anomaly effects, player placement, and
-resource production._
+_Board generation removed by Milestone 9; the layout is supplied as configuration. The seeded
+RNG survives unchanged and now drives the Reserve shuffle, dice, and theft._
 
 ## 5. Setup placement
 
-- [x] `BoardTopology` index: board corners, edges, corner→sectors, corner→edges
-- [x] Snake-order sequencing with immutable `SetupState` transitions
-- [x] Outpost legality: on-board, unoccupied, no directly connected outpost, touches a
-      visible sector
-- [x] Mandatory connected route before the sequence advances
-- [x] Starting resources granted on the second pair only, from visible producing sectors
-- [x] Minimal outpost/trade-route ownership types (`buildings/`, `routes/`)
-- [x] Verified 2026-07-28 (237/237 unit tests passing)
+- [x] Snake-order placement with legality rules
 
-_Deliberately excluded: normal turns, dice, production rolls, construction costs, colonies,
-nexus, trading, exploration reveal, scoring, and AI._
+_Removed by Milestone 9 and replaced with beginner setup._
 
 ## 6. Turn and production
 
-- [x] Match initialization from completed setup (player order, setup grants, piece-supply
-      deductions, resource bank)
-- [x] Turn phases (`startTurn` → `roll` → `resolveProduction` → `trade` → `build` →
-      `endTurn`, plus `crisisPending` entry on a roll of 7)
-- [x] Deterministic two-dice rolling via the seeded random service
-- [x] Resource production from visible producing sectors and adjacent outposts, aggregated
-      per player and per resource
-- [x] Finite resource bank with all-or-nothing shortage handling per resource
-- [x] Deterministic domain events (`TurnStarted`, `DiceRolled`, `SectorProduced`,
-      `ResourcesGranted`, `ResourceShortage`, `ProductionResolved`, `TurnEnded`)
-- [x] Turn advancement: player-order wrap and turn-number increment
-- [x] Verified 2026-07-29 (275/275 unit tests passing)
+- [x] Immutable match state and deterministic domain events
+- [x] Deterministic two-dice rolling
 
-_Deliberately excluded: discard, Void Marauder/theft, trading, construction actions, colonies,
-nexus, sector reveal, scoring, and AI._
+_Phases, production values, and the resource bank were replaced by Milestone 9._
 
 ## 7. Crisis system
 
-- [x] Discriminated `CrisisState` (`discarding` / `movingMarauder` / `selectingStealTarget` /
-      `stealing`) plus a canonical `marauderCoordinate` on `Match`
-- [x] Roll-of-7 discard: fixed-at-start required counts (`floor(total / 2)` above 7 cards),
-      exact-total/ownership/quantity validation, discarded resources returned to the bank
-- [x] Void Marauder movement: active-player-only, only after discards finish, to a different
-      on-board sector; blocks production on its occupied sector without changing unrelated
-      production behaviour, with a `ProductionBlockedByMarauder` event
-- [x] Steal-target eligibility (unique adjacent opponents holding resources, excluding the
-      active player) and deterministic weighted theft via the seeded random service
-- [x] Crisis completion clears crisis state and advances to `trade`, preserving the active
-      player and rolled dice; normal trade/build/endTurn transitions stay blocked until then
-- [x] Verified 2026-07-29 (321/321 unit tests passing)
+- [x] Roll-of-7 discard, Void Marauder movement, adjacency-limited theft
 
-_Deliberately excluded: trading, normal construction, colonies, nexus, sector reveal, scoring,
-and AI._
+_Removed entirely by Milestone 9. The Void Marauder does not exist in the corrected rules._
 
 ## 8. Construction
 
-- [x] One discriminated `Structure` type (Outpost/Colony/Nexus) replacing the setup-only
-      minimal Outpost on `Match`
-- [x] Exact, centrally configured costs for Trade Route, Outpost, Colony upgrade, Nexus
-      upgrade
-- [x] Trade Route legality: on-board, unoccupied, affordable, piece available, connected via
-      an owned structure or owned route at either endpoint (not through an opponent structure)
-- [x] Outpost legality: on-board, unoccupied, no adjacent structure, touches a visible sector,
-      connected to a player-owned route, piece available, affordable
-- [x] Colony/Nexus upgrades: correct current structure type and ownership required; piece
-      supply moves in both directions (consumes the next tier, returns the previous tier)
-- [x] Atomic resource spending (validate-then-deduct, spent resources returned to the bank)
-- [x] Production values wired to structure type (Outpost 1 / Colony 2 / Nexus 3), preserving
-      hidden-sector, non-producing-sector, Marauder-blocking, and bank-shortage behavior
-- [x] Derived (not stored) 3:1 bank-trade rate for Nexus owners, for the future trading
-      milestone
-- [x] Construction events (`TradeRouteBuilt`, `OutpostBuilt`, `ColonyUpgraded`,
-      `NexusUpgraded`, `ResourcesSpent`, `PieceSupplyChanged`)
-- [x] Verified 2026-07-29 (370/370 unit tests passing)
+- [x] Centralized costs and atomic validate-then-spend
 
-_Deliberately excluded: player/bank trading, exploration reveal, anomaly effects, scoring,
-victory, longest network, AI, and UI._
+_Actions replaced by Milestone 9; the cost-configuration and spending patterns survive._
 
-## 9. Trading
+## 9. Rulebook alignment refactor
 
-- [ ] Player-to-player and/or market trading
+- [x] Resource role mapping (`alloy`=ore, `plasma`=fuel, `cryonite`=carbon, `biofiber`=food,
+      `quantumCore`=goods) with serialized identifiers unchanged
+- [x] Data-driven board domain: `Planet`, `PlanetarySystem`, `HomeColonySystem`,
+      `AlienOutpost`, `SpaceSector`, `Intersection`, `ColonySite`, `SpaceportSite`,
+      `DockingPoint`, `Dock`, hidden/revealed number discs
+- [x] Externally configurable topology with structural and composition validation
+- [x] Piece model: 9 Colonies / 7 Trade Stations / 3 Transport Ships / 3 Shipyards, with
+      composite Colony Ship / Trade Ship / Spaceport semantics
+- [x] Structures (Colony, Spaceport, Trade Station) and ships on graph intersections
+- [x] Beginner setup: 2 Colonies, 1 Spaceport, 1 Colony Ship, 4 VP, 3 Reserve cards, 1 Fame
+      Medal piece, 1 Booster; highest-roll starting player; neutral blockers for 3 players
+- [x] Turn flow: Production → Trade & Build (interleaved) → Flight → End Turn
+- [x] Production: exactly 1 resource per adjacent Colony **and** per adjacent Spaceport
+- [x] Separate face-up Supply and face-down Reserve pile with deterministic shuffle and rebuild
+- [x] Reserve entitlement by victory points (4-7 → 2, 8-9 → 1, 10+ → 0)
+- [x] Roll of 7: discard half over 7, direct weighted theft, opponent Reserve draws; Void
+      Marauder fully removed
+- [x] Supply trade rates: 3:1, and 2:1 for `quantumCore`
+- [x] Build actions and exact costs for Spaceport, Colony Ship, Trade Ship, Cannon, Freight
+      Pod, Booster, with correct piece consumption and upgrade limits
+- [x] Mothership state (boosters, cannons, freight pods, Fame Medal pieces)
+- [x] Scoring foundation and the 15-point target
+- [x] Obsolete mechanics removed: Longest Network, route ownership, Outpost/Nexus tiers,
+      Void Marauder, randomized resource-hex board, snake setup, 8/10/14-point targets
+- [x] Verified 2026-07-29 (207/207 unit tests passing; typecheck, lint, format, build clean)
 
-## 10. Exploration
+_Deliberately excluded: everything in Milestones 10-22 below._
 
-- [ ] Exploration mechanics and rewards
+## 10. Supply and player trading
 
-## 11. Scoring and victory
+- [ ] Executable player-to-player trade offers, counteroffers, and acceptance
+- [ ] Enforcement that only the active player finalizes a deal, and that inactive players
+      trade only with the active player
+- [ ] Trade history and per-player trade counters
 
-- [ ] Victory point tracking and win conditions
+## 11. Flight graph and ship movement
 
-## 12. AI
+- [ ] Movement along the intersection graph within a speed budget
+- [ ] Passing through occupied intersections while counting them
+- [ ] One piece per intersection after movement; turning back permitted
+- [ ] Blockade rules (spaceport sites, colony sites, docking points) — see
+      `docs/RULEBOOK_GAPS.md` gap 6
+
+## 12. Mothership speed determination
+
+- [ ] Explicit, documented digital substitute for the physical ball mechanism
+- [ ] Base speed plus boosters; encounter trigger surfaced but unresolved here
+- [ ] Decision recorded in `docs/DECISIONS.md` — see `docs/RULEBOOK_GAPS.md` gap 9
+
+## 13. Planetary-system exploration
+
+- [ ] Revealing all face-down discs in a system on arrival at an adjacent intersection
+- [ ] Replacing hazard discs with pirate-base and ice-planet tokens
+- [ ] Continuing movement after exploration
+
+## 14. Establishing Colonies
+
+- [ ] Colony Ship ends flight on an unoccupied colony site and establishes
+- [ ] Transport Ship returns to supply; the Colony remains
+- [ ] Adjacent-hazard restriction; 3-player two-colonies-per-system limit
+- [ ] Colony-site vacate-or-establish obligation
+
+## 15. Alien outposts and Trade Stations
+
+- [ ] Trade Ship ends flight on a docking point and establishes a Trade Station on a free dock
+- [ ] Freight-pod requirement scaled to existing trade stations at that outpost
+
+## 16. Mothership upgrades in play
+
+- [ ] Cannon and freight-pod effects on combat strength and capacity
+- [ ] Booster effects on speed
+
+## 17. Pirate bases and ice planets
+
+- [ ] Defeating a pirate base by cannon count; terraforming by freight-pod count
+- [ ] Awarding the token as a permanent 1-point fame medal
+- [ ] Placing a fresh number disc on the cleared planet
+
+## 18. Friendship Cards and Markers
+
+- [ ] Card selection on establishing a Trade Station
+- [ ] Marker award, and transfer when another player takes the outpost majority
+- [ ] Card effects, including roll-of-7 discard protection — see `docs/RULEBOOK_GAPS.md` gap 5
+
+## 19. Encounters
+
+- [ ] Encounter deck, draw, and resolution procedure
+- [ ] Fame Medal piece gain and loss — see `docs/RULEBOOK_GAPS.md` gap 4
+
+## 20. Scoring and victory
+
+- [ ] Full recomputation across every scoring source, including markers and tokens
+- [ ] Victory-point track synchronization on marker transfer
+- [ ] End-of-game detection on the holder's own turn at 15 points
+
+## 21. AI
 
 - [ ] Computer-controlled opponents
 
-## 13. Full UI
-
-- [ ] Complete PixiJS board rendering and HUD
-
-## 14. Persistence
+## 22. Persistence
 
 - [ ] Save/load via `idb`
 
-## 15. Tutorial and accessibility
+## 23. Full UI
+
+- [ ] Complete PixiJS board rendering and HUD
+
+## 24. Tutorial and accessibility
 
 - [ ] Onboarding flow and accessibility pass
 
-## 16. Final QA
+## 25. Final QA
 
 - [ ] Full regression pass across all systems

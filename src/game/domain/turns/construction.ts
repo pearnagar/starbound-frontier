@@ -1,27 +1,30 @@
+import { listSpaceportSites, type IntersectionId, type SpaceportSite } from '../board/space-board'
+import { asShipId, createShip, type ShipType } from '../buildings/ship'
+import { createSpaceport } from '../buildings/structure'
 import {
-  createBoardTopology,
-  getAdjacentBoardVertexIds,
-  getSectorsAdjacentToVertex,
-  isBoardEdge,
-  isBoardVertex,
-  type BoardTopology,
-} from '../board/board-topology'
-import { getEdgeVertices, type EdgeId } from '../board/edge'
-import type { VertexId } from '../board/vertex'
-import { createStructure, type Structure } from '../buildings/structure'
-import { createTradeRoute, type TradeRoute } from '../routes/trade-route'
+  getBuildCost,
+  getMothershipUpgradeLimit,
+  type BuildAction,
+  type MothershipUpgradeKind,
+} from '../rules/rules-config'
 import type { PlayerId } from '../types/ids'
-import type { PieceSupply } from '../types/piece-supply'
+import { addUpgrade, canAddUpgrade } from '../types/mothership'
+import { adjustPieceSupply, hasPieces, type PieceKind } from '../types/piece-supply'
+import type { Player } from '../types/player'
 import {
-  createEmptyResourceInventory,
-  RESOURCE_TYPES,
+  hasAtLeastResources,
+  subtractResourceInventories,
   type ResourceInventory,
 } from '../types/resources'
 import type { DomainResult, DomainValidationError } from '../types/result'
-import { canAffordCost, getBuildCost, type ConstructionAction } from './construction-config'
-import type { Match } from './match'
+import {
+  getStructureAt,
+  isIntersectionOccupied,
+  listPlayerSiteStructures,
+  type Match,
+} from './match'
 import type { MatchEvent } from './match-events'
-import { addToBank } from './resource-bank'
+import { addToSupply } from './resource-bank'
 
 function failure(code: string, message: string, field: string): DomainResult<never> {
   const error: DomainValidationError = { code, message, field }
@@ -30,484 +33,377 @@ function failure(code: string, message: string, field: string): DomainResult<nev
 
 function appendEvent(match: Match, buildEvent: (sequence: number) => MatchEvent): Match {
   const sequence = match.eventSequence + 1
-  const event = buildEvent(sequence)
-  return { ...match, events: [...match.events, event], eventSequence: sequence }
+  return { ...match, events: [...match.events, buildEvent(sequence)], eventSequence: sequence }
 }
 
-/** Shared preconditions for every construction action. */
-function checkConstructionAllowed(match: Match, playerId: PlayerId): DomainResult<null> {
+/**
+ * Building is legal only during Trade & Build, by the active player. Trading
+ * and building share the phase, so a player may alternate freely between them.
+ */
+function checkBuildContext(match: Match, playerId: PlayerId): DomainResult<Player> {
   if (match.status !== 'inProgress') {
     return failure('MATCH_NOT_IN_PROGRESS', 'The match is not in progress.', 'status')
   }
-  if (match.phase !== 'build') {
-    return failure(
-      'WRONG_PHASE',
-      `Construction requires the "build" phase, but the match is in "${match.phase}".`,
-      'phase',
-    )
+  if (match.phase !== 'tradeAndBuild') {
+    return failure('WRONG_PHASE', 'Building is only allowed during Trade & Build.', 'phase')
   }
   if (match.activePlayerId !== playerId) {
     return failure('WRONG_ACTIVE_PLAYER', 'It is not this player’s turn.', 'playerId')
   }
-  if (match.crisisState !== undefined) {
-    return failure(
-      'CRISIS_UNRESOLVED',
-      'Construction cannot occur while a crisis is unresolved.',
-      'crisisState',
-    )
-  }
-  return { success: true, value: null }
-}
-
-function getPlayerResources(match: Match, playerId: PlayerId): ResourceInventory {
-  return match.playersById[playerId]?.resources ?? createEmptyResourceInventory()
-}
-
-export function canAffordBuild(resources: ResourceInventory, action: ConstructionAction): boolean {
-  return canAffordCost(resources, getBuildCost(action))
-}
-
-/**
- * Deducts `action`'s cost from `playerId`'s resources and returns those
- * resources to the bank, emitting `ResourcesSpent`. Callers must have already
- * validated affordability — this is the atomic apply step, not the check.
- */
-function spendForConstruction(match: Match, playerId: PlayerId, action: ConstructionAction): Match {
-  const cost = getBuildCost(action)
   const player = match.playersById[playerId]
   if (player === undefined) {
-    return match
+    return failure('UNKNOWN_PLAYER', 'No such player in this match.', 'playerId')
   }
-  const resources: Record<string, number> = { ...player.resources }
-  for (const type of RESOURCE_TYPES) {
-    resources[type] = player.resources[type] - cost[type]
-  }
-  const playersById = {
-    ...match.playersById,
-    [playerId]: { ...player, resources: resources as ResourceInventory },
-  }
-  const bank = addToBank(match.bank, cost)
+  return { success: true, value: player }
+}
 
-  return appendEvent({ ...match, playersById, bank }, (sequence) => ({
+export function canAffordBuild(player: Player, action: BuildAction): boolean {
+  return hasAtLeastResources(player.resources, getBuildCost(action))
+}
+
+/** Deducts a cost from the player and returns it to the face-up Supply. */
+function payCost(match: Match, player: Player, action: BuildAction): Match {
+  const cost: ResourceInventory = getBuildCost(action)
+  const updated: Player = {
+    ...player,
+    resources: subtractResourceInventories(player.resources, cost),
+  }
+  const paid: Match = {
+    ...match,
+    playersById: { ...match.playersById, [player.id]: updated },
+    supply: addToSupply(match.supply, cost),
+  }
+  return appendEvent(paid, (sequence) => ({
     sequence,
     type: 'ResourcesSpent',
-    playerId,
+    playerId: player.id,
     action,
     spent: cost,
   }))
 }
 
-function applyPieceSupplyChange(match: Match, playerId: PlayerId, nextSupply: PieceSupply): Match {
-  const player = match.playersById[playerId]
-  if (player === undefined) {
-    return match
-  }
-  const playersById = { ...match.playersById, [playerId]: { ...player, pieceSupply: nextSupply } }
-  return appendEvent({ ...match, playersById }, (sequence) => ({
-    sequence,
-    type: 'PieceSupplyChanged',
-    playerId,
-    pieceSupply: nextSupply,
-  }))
-}
+// --- Spaceport -----------------------------------------------------------
 
-function topologyFor(match: Match): BoardTopology {
-  return createBoardTopology(match.board)
-}
-
-// ---------------------------------------------------------------------------
-// Trade routes
-// ---------------------------------------------------------------------------
-
-/**
- * True when `vertexId` establishes connectivity for `playerId`: a
- * player-owned structure sits there, or a player-owned route touches it and
- * the corner is not occupied by an opponent's structure.
- */
-function vertexEstablishesConnectivity(
+/** Colonies this player could upgrade into a Spaceport. */
+export function getUpgradeableColonies(
   match: Match,
   playerId: PlayerId,
-  vertexId: VertexId,
-): boolean {
-  const structure = match.structures[vertexId]
-  if (structure !== undefined) {
-    return structure.ownerId === playerId
-  }
-  return Object.values(match.routes).some(
-    (route) => route.ownerId === playerId && getEdgeVertices(route.edgeId).includes(vertexId),
-  )
+): readonly IntersectionId[] {
+  return listPlayerSiteStructures(match, playerId)
+    .filter((structure) => structure.type === 'colony')
+    .map((structure) => structure.intersectionId)
 }
 
-function checkTradeRoutePlaceable(
+export function validateSpaceportBuild(
   match: Match,
-  topology: BoardTopology,
   playerId: PlayerId,
-  edgeId: EdgeId,
+  intersectionId: IntersectionId,
 ): DomainResult<null> {
-  if (!isBoardEdge(topology, edgeId)) {
-    return failure('EDGE_NOT_ON_BOARD', 'That edge is not part of the board.', 'edgeId')
+  const context = checkBuildContext(match, playerId)
+  if (!context.success) {
+    return context
   }
-  if (match.routes[edgeId] !== undefined) {
-    return failure('EDGE_OCCUPIED', 'That edge already holds a trade route.', 'edgeId')
-  }
-  const [a, b] = getEdgeVertices(edgeId)
-  const connected =
-    vertexEstablishesConnectivity(match, playerId, a) ||
-    vertexEstablishesConnectivity(match, playerId, b)
-  if (!connected) {
-    return failure(
-      'ROUTE_NOT_CONNECTED',
-      'A trade route must connect to your existing network or a structure you own.',
-      'edgeId',
-    )
-  }
-  if (match.playersById[playerId]?.pieceSupply.tradeRoutes === 0) {
-    return failure('NO_TRADE_ROUTES_REMAINING', 'No trade routes remain in supply.', 'pieceSupply')
-  }
-  if (!canAffordBuild(getPlayerResources(match, playerId), 'tradeRoute')) {
-    return failure(
-      'INSUFFICIENT_RESOURCES',
-      'Not enough resources to build a trade route.',
-      'resources',
-    )
-  }
-  return { success: true, value: null }
-}
+  const player = context.value
 
-export function validateTradeRouteBuild(
-  match: Match,
-  playerId: PlayerId,
-  edgeId: EdgeId,
-): DomainResult<null> {
-  const allowed = checkConstructionAllowed(match, playerId)
-  if (!allowed.success) {
-    return allowed
-  }
-  return checkTradeRoutePlaceable(match, topologyFor(match), playerId, edgeId)
-}
-
-export function getLegalTradeRouteEdges(match: Match, playerId: PlayerId): readonly EdgeId[] {
-  const allowed = checkConstructionAllowed(match, playerId)
-  if (!allowed.success) {
-    return []
-  }
-  const topology = topologyFor(match)
-  return topology.edgeIds.filter(
-    (edgeId) => checkTradeRoutePlaceable(match, topology, playerId, edgeId).success,
-  )
-}
-
-export function buildTradeRoute(
-  match: Match,
-  playerId: PlayerId,
-  edgeId: EdgeId,
-): DomainResult<Match> {
-  const validation = validateTradeRouteBuild(match, playerId, edgeId)
-  if (!validation.success) {
-    return validation
-  }
-
-  const spent = spendForConstruction(match, playerId, 'tradeRoute')
-  const route: TradeRoute = createTradeRoute(edgeId, playerId)
-  const withRoute = appendEvent(
-    { ...spent, routes: { ...spent.routes, [edgeId]: route } },
-    (sequence) => ({ sequence, type: 'TradeRouteBuilt', playerId, edgeId }),
-  )
-
-  const player = withRoute.playersById[playerId]
-  if (player === undefined) {
-    return failure('PLAYER_NOT_FOUND', 'No player found for this id.', 'playerId')
-  }
-  const nextSupply: PieceSupply = {
-    ...player.pieceSupply,
-    tradeRoutes: player.pieceSupply.tradeRoutes - 1,
-  }
-
-  return { success: true, value: applyPieceSupplyChange(withRoute, playerId, nextSupply) }
-}
-
-// ---------------------------------------------------------------------------
-// Outposts
-// ---------------------------------------------------------------------------
-
-function touchesVisibleSector(topology: BoardTopology, vertexId: VertexId): boolean {
-  return getSectorsAdjacentToVertex(topology, vertexId).some(
-    (sector) => sector.visibility === 'visible',
-  )
-}
-
-function touchesPlayerRoute(match: Match, playerId: PlayerId, vertexId: VertexId): boolean {
-  return Object.values(match.routes).some(
-    (route) => route.ownerId === playerId && getEdgeVertices(route.edgeId).includes(vertexId),
-  )
-}
-
-function checkOutpostPlaceable(
-  match: Match,
-  topology: BoardTopology,
-  playerId: PlayerId,
-  vertexId: VertexId,
-): DomainResult<null> {
-  if (!isBoardVertex(topology, vertexId)) {
-    return failure('VERTEX_NOT_ON_BOARD', 'That corner is not part of the board.', 'vertexId')
-  }
-  if (match.structures[vertexId] !== undefined) {
-    return failure('VERTEX_OCCUPIED', 'That corner already holds a structure.', 'vertexId')
-  }
-  const blocked = getAdjacentBoardVertexIds(topology, vertexId).some(
-    (neighbour) => match.structures[neighbour] !== undefined,
-  )
-  if (blocked) {
-    return failure(
-      'ADJACENT_STRUCTURE_BLOCKED',
-      'A structure already sits on a directly connected corner.',
-      'vertexId',
-    )
-  }
-  if (!touchesVisibleSector(topology, vertexId)) {
-    return failure(
-      'HIDDEN_ONLY_VERTEX',
-      'An outpost must touch at least one visible sector.',
-      'vertexId',
-    )
-  }
-  if (!touchesPlayerRoute(match, playerId, vertexId)) {
-    return failure(
-      'OUTPOST_NOT_CONNECTED',
-      'An outpost must connect to one of your existing trade routes.',
-      'vertexId',
-    )
-  }
-  if (match.playersById[playerId]?.pieceSupply.outposts === 0) {
-    return failure('NO_OUTPOSTS_REMAINING', 'No outposts remain in supply.', 'pieceSupply')
-  }
-  if (!canAffordBuild(getPlayerResources(match, playerId), 'outpost')) {
-    return failure(
-      'INSUFFICIENT_RESOURCES',
-      'Not enough resources to build an outpost.',
-      'resources',
-    )
-  }
-  return { success: true, value: null }
-}
-
-export function validateOutpostBuild(
-  match: Match,
-  playerId: PlayerId,
-  vertexId: VertexId,
-): DomainResult<null> {
-  const allowed = checkConstructionAllowed(match, playerId)
-  if (!allowed.success) {
-    return allowed
-  }
-  return checkOutpostPlaceable(match, topologyFor(match), playerId, vertexId)
-}
-
-export function getLegalOutpostVertices(match: Match, playerId: PlayerId): readonly VertexId[] {
-  const allowed = checkConstructionAllowed(match, playerId)
-  if (!allowed.success) {
-    return []
-  }
-  const topology = topologyFor(match)
-  return topology.vertexIds.filter(
-    (vertexId) => checkOutpostPlaceable(match, topology, playerId, vertexId).success,
-  )
-}
-
-export function buildOutpost(
-  match: Match,
-  playerId: PlayerId,
-  vertexId: VertexId,
-): DomainResult<Match> {
-  const validation = validateOutpostBuild(match, playerId, vertexId)
-  if (!validation.success) {
-    return validation
-  }
-
-  const spent = spendForConstruction(match, playerId, 'outpost')
-  const structure: Structure = createStructure('outpost', vertexId, playerId)
-  const withStructure = appendEvent(
-    { ...spent, structures: { ...spent.structures, [vertexId]: structure } },
-    (sequence) => ({ sequence, type: 'OutpostBuilt', playerId, vertexId }),
-  )
-
-  const player = withStructure.playersById[playerId]
-  if (player === undefined) {
-    return failure('PLAYER_NOT_FOUND', 'No player found for this id.', 'playerId')
-  }
-  const nextSupply: PieceSupply = {
-    ...player.pieceSupply,
-    outposts: player.pieceSupply.outposts - 1,
-  }
-
-  return { success: true, value: applyPieceSupplyChange(withStructure, playerId, nextSupply) }
-}
-
-// ---------------------------------------------------------------------------
-// Colony upgrade
-// ---------------------------------------------------------------------------
-
-function checkColonyUpgrade(
-  match: Match,
-  playerId: PlayerId,
-  vertexId: VertexId,
-): DomainResult<null> {
-  const structure = match.structures[vertexId]
+  const structure = getStructureAt(match, intersectionId)
   if (structure === undefined) {
-    return failure('UPGRADE_TARGET_MISSING', 'No structure exists at that corner.', 'vertexId')
-  }
-  if (structure.type !== 'outpost') {
-    return failure(
-      'WRONG_STRUCTURE_TYPE',
-      'Only an Outpost can be upgraded to a Colony.',
-      'vertexId',
-    )
+    return failure('NO_STRUCTURE', 'There is no structure at that site.', 'intersectionId')
   }
   if (structure.ownerId !== playerId) {
-    return failure('NOT_YOUR_STRUCTURE', 'You do not own the Outpost at that corner.', 'vertexId')
-  }
-  if (match.playersById[playerId]?.pieceSupply.colonies === 0) {
-    return failure('NO_COLONIES_REMAINING', 'No Colony pieces remain in supply.', 'pieceSupply')
-  }
-  if (!canAffordBuild(getPlayerResources(match, playerId), 'colony')) {
-    return failure(
-      'INSUFFICIENT_RESOURCES',
-      'Not enough resources to upgrade to a Colony.',
-      'resources',
-    )
-  }
-  return { success: true, value: null }
-}
-
-export function validateColonyUpgrade(
-  match: Match,
-  playerId: PlayerId,
-  vertexId: VertexId,
-): DomainResult<null> {
-  const allowed = checkConstructionAllowed(match, playerId)
-  if (!allowed.success) {
-    return allowed
-  }
-  return checkColonyUpgrade(match, playerId, vertexId)
-}
-
-export function upgradeToColony(
-  match: Match,
-  playerId: PlayerId,
-  vertexId: VertexId,
-): DomainResult<Match> {
-  const validation = validateColonyUpgrade(match, playerId, vertexId)
-  if (!validation.success) {
-    return validation
-  }
-
-  const spent = spendForConstruction(match, playerId, 'colony')
-  const structure: Structure = createStructure('colony', vertexId, playerId)
-  const withStructure = appendEvent(
-    { ...spent, structures: { ...spent.structures, [vertexId]: structure } },
-    (sequence) => ({ sequence, type: 'ColonyUpgraded', playerId, vertexId }),
-  )
-
-  const player = withStructure.playersById[playerId]
-  if (player === undefined) {
-    return failure('PLAYER_NOT_FOUND', 'No player found for this id.', 'playerId')
-  }
-  const nextSupply: PieceSupply = {
-    ...player.pieceSupply,
-    colonies: player.pieceSupply.colonies - 1,
-    outposts: player.pieceSupply.outposts + 1,
-  }
-
-  return { success: true, value: applyPieceSupplyChange(withStructure, playerId, nextSupply) }
-}
-
-// ---------------------------------------------------------------------------
-// Nexus upgrade
-// ---------------------------------------------------------------------------
-
-function checkNexusUpgrade(
-  match: Match,
-  playerId: PlayerId,
-  vertexId: VertexId,
-): DomainResult<null> {
-  const structure = match.structures[vertexId]
-  if (structure === undefined) {
-    return failure('UPGRADE_TARGET_MISSING', 'No structure exists at that corner.', 'vertexId')
+    return failure('NOT_OWNER', 'That structure belongs to another player.', 'intersectionId')
   }
   if (structure.type !== 'colony') {
-    return failure('WRONG_STRUCTURE_TYPE', 'Only a Colony can be upgraded to a Nexus.', 'vertexId')
-  }
-  if (structure.ownerId !== playerId) {
-    return failure('NOT_YOUR_STRUCTURE', 'You do not own the Colony at that corner.', 'vertexId')
-  }
-  if (match.playersById[playerId]?.pieceSupply.nexus === 0) {
-    return failure('NO_NEXUS_REMAINING', 'No Nexus pieces remain in supply.', 'pieceSupply')
-  }
-  if (!canAffordBuild(getPlayerResources(match, playerId), 'nexus')) {
     return failure(
-      'INSUFFICIENT_RESOURCES',
-      'Not enough resources to upgrade to a Nexus.',
-      'resources',
+      'NOT_A_COLONY',
+      'Only a Colony can be upgraded to a Spaceport.',
+      'intersectionId',
     )
+  }
+  if (!hasPieces(player.pieceSupply, { shipyards: 1 })) {
+    return failure(
+      'NO_PIECE_AVAILABLE',
+      'No Shipyard remains in the personal supply.',
+      'pieceSupply',
+    )
+  }
+  if (!canAffordBuild(player, 'spaceport')) {
+    return failure('INSUFFICIENT_RESOURCES', 'Cannot afford a Spaceport.', 'resources')
   }
   return { success: true, value: null }
 }
 
-export function validateNexusUpgrade(
+/**
+ * Upgrades a Colony into a Spaceport. The Colony piece remains part of the
+ * Spaceport, so only a Shipyard leaves the personal supply and the site keeps
+ * producing exactly 1 resource.
+ */
+export function buildSpaceport(
   match: Match,
   playerId: PlayerId,
-  vertexId: VertexId,
-): DomainResult<null> {
-  const allowed = checkConstructionAllowed(match, playerId)
-  if (!allowed.success) {
-    return allowed
-  }
-  return checkNexusUpgrade(match, playerId, vertexId)
-}
-
-export function upgradeToNexus(
-  match: Match,
-  playerId: PlayerId,
-  vertexId: VertexId,
+  intersectionId: IntersectionId,
 ): DomainResult<Match> {
-  const validation = validateNexusUpgrade(match, playerId, vertexId)
+  const validation = validateSpaceportBuild(match, playerId, intersectionId)
   if (!validation.success) {
     return validation
   }
-
-  const spent = spendForConstruction(match, playerId, 'nexus')
-  const structure: Structure = createStructure('nexus', vertexId, playerId)
-  const withStructure = appendEvent(
-    { ...spent, structures: { ...spent.structures, [vertexId]: structure } },
-    (sequence) => ({ sequence, type: 'NexusUpgraded', playerId, vertexId }),
-  )
-
-  const player = withStructure.playersById[playerId]
+  const player = match.playersById[playerId]
   if (player === undefined) {
-    return failure('PLAYER_NOT_FOUND', 'No player found for this id.', 'playerId')
-  }
-  const nextSupply: PieceSupply = {
-    ...player.pieceSupply,
-    nexus: player.pieceSupply.nexus - 1,
-    colonies: player.pieceSupply.colonies + 1,
+    return failure('UNKNOWN_PLAYER', 'No such player in this match.', 'playerId')
   }
 
-  return { success: true, value: applyPieceSupplyChange(withStructure, playerId, nextSupply) }
+  let working = payCost(match, player, 'spaceport')
+  const paidPlayer = working.playersById[playerId]
+  if (paidPlayer === undefined) {
+    return failure('UNKNOWN_PLAYER', 'No such player in this match.', 'playerId')
+  }
+
+  const updated: Player = {
+    ...paidPlayer,
+    pieceSupply: adjustPieceSupply(paidPlayer.pieceSupply, { shipyards: -1 }),
+  }
+
+  working = {
+    ...working,
+    playersById: { ...working.playersById, [playerId]: updated },
+    structures: {
+      ...working.structures,
+      [intersectionId]: createSpaceport(intersectionId, playerId),
+    },
+  }
+
+  working = appendEvent(working, (sequence) => ({
+    sequence,
+    type: 'SpaceportBuilt',
+    playerId,
+    intersectionId,
+  }))
+
+  return {
+    success: true,
+    value: appendEvent(working, (sequence) => ({
+      sequence,
+      type: 'PieceSupplyChanged',
+      playerId,
+      pieceSupply: updated.pieceSupply,
+    })),
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Bank-trade rate
-// ---------------------------------------------------------------------------
+// --- Ships ---------------------------------------------------------------
 
 /**
- * A player's future bank-trade rate: 3:1 once they own at least one Nexus,
- * otherwise the standard 4:1. Derived from placed structures rather than
- * stored, so it can never drift out of sync with the board — bank-trading
- * execution itself belongs to a later milestone.
+ * Unoccupied spaceport sites belonging to this player. A site belongs to a
+ * player when they own a Spaceport in the system that site serves.
  */
-export function getPlayerBankTradeRate(match: Match, playerId: PlayerId): number {
-  const ownsNexus = Object.values(match.structures).some(
-    (structure) => structure.ownerId === playerId && structure.type === 'nexus',
+export function getAvailableSpaceportSites(
+  match: Match,
+  playerId: PlayerId,
+): readonly SpaceportSite[] {
+  const ownedSpaceportIntersections = new Set<string>(
+    listPlayerSiteStructures(match, playerId)
+      .filter((structure) => structure.type === 'spaceport')
+      .map((structure) => structure.intersectionId),
   )
-  return ownsNexus ? 3 : 4
+  if (ownedSpaceportIntersections.size === 0) {
+    return []
+  }
+
+  return listSpaceportSites(match.board).filter((site) => {
+    if (isIntersectionOccupied(match, site.intersectionId)) {
+      return false
+    }
+    const system = match.board.systems[site.systemId]
+    if (system === undefined) {
+      return false
+    }
+    return system.colonySites.some((colonySite) =>
+      ownedSpaceportIntersections.has(colonySite.intersectionId),
+    )
+  })
+}
+
+const SHIP_BUILD_ACTION: Readonly<Record<ShipType, BuildAction>> = {
+  colonyShip: 'colonyShip',
+  tradeShip: 'tradeShip',
+}
+
+/** A ship consumes a Transport Ship plus the piece it will leave behind. */
+const SHIP_PIECE_COST: Readonly<Record<ShipType, Partial<Record<PieceKind, number>>>> = {
+  colonyShip: { transportShips: 1, colonies: 1 },
+  tradeShip: { transportShips: 1, tradeStations: 1 },
+}
+
+export function validateShipBuild(
+  match: Match,
+  playerId: PlayerId,
+  shipType: ShipType,
+  intersectionId: IntersectionId,
+): DomainResult<null> {
+  const context = checkBuildContext(match, playerId)
+  if (!context.success) {
+    return context
+  }
+  const player = context.value
+
+  const available = getAvailableSpaceportSites(match, playerId)
+  if (!available.some((site) => site.intersectionId === intersectionId)) {
+    return failure(
+      'INVALID_SPACEPORT_SITE',
+      'A ship may only be built on the player’s own unoccupied spaceport site.',
+      'intersectionId',
+    )
+  }
+  if (!hasPieces(player.pieceSupply, SHIP_PIECE_COST[shipType])) {
+    return failure(
+      'NO_PIECE_AVAILABLE',
+      'The personal supply lacks a Transport Ship or the carried piece.',
+      'pieceSupply',
+    )
+  }
+  if (!canAffordBuild(player, SHIP_BUILD_ACTION[shipType])) {
+    return failure('INSUFFICIENT_RESOURCES', 'Cannot afford that ship.', 'resources')
+  }
+  return { success: true, value: null }
+}
+
+/**
+ * Builds a Colony Ship or Trade Ship on an owned, unoccupied spaceport site.
+ * The ship is marked as built this turn because both types may move during the
+ * same turn's Flight Phase.
+ */
+export function buildShip(
+  match: Match,
+  playerId: PlayerId,
+  shipType: ShipType,
+  intersectionId: IntersectionId,
+): DomainResult<Match> {
+  const validation = validateShipBuild(match, playerId, shipType, intersectionId)
+  if (!validation.success) {
+    return validation
+  }
+  const player = match.playersById[playerId]
+  if (player === undefined) {
+    return failure('UNKNOWN_PLAYER', 'No such player in this match.', 'playerId')
+  }
+
+  let working = payCost(match, player, SHIP_BUILD_ACTION[shipType])
+  const paidPlayer = working.playersById[playerId]
+  if (paidPlayer === undefined) {
+    return failure('UNKNOWN_PLAYER', 'No such player in this match.', 'playerId')
+  }
+
+  const pieceDelta = SHIP_PIECE_COST[shipType]
+  const updated: Player = {
+    ...paidPlayer,
+    pieceSupply: adjustPieceSupply(paidPlayer.pieceSupply, {
+      transportShips: -(pieceDelta.transportShips ?? 0),
+      colonies: -(pieceDelta.colonies ?? 0),
+      tradeStations: -(pieceDelta.tradeStations ?? 0),
+    }),
+  }
+
+  const shipId = asShipId(`${working.matchId}-ship-${String(working.nextShipNumber)}`)
+  const ship = createShip(shipId, shipType, playerId, intersectionId, true)
+
+  working = {
+    ...working,
+    playersById: { ...working.playersById, [playerId]: updated },
+    ships: { ...working.ships, [shipId]: ship },
+    nextShipNumber: working.nextShipNumber + 1,
+  }
+
+  working = appendEvent(working, (sequence) => ({
+    sequence,
+    type: 'ShipBuilt',
+    playerId,
+    shipId,
+    shipType,
+    intersectionId,
+  }))
+
+  return {
+    success: true,
+    value: appendEvent(working, (sequence) => ({
+      sequence,
+      type: 'PieceSupplyChanged',
+      playerId,
+      pieceSupply: updated.pieceSupply,
+    })),
+  }
+}
+
+// --- Mothership upgrades -------------------------------------------------
+
+const UPGRADE_ACTION: Readonly<Record<MothershipUpgradeKind, BuildAction>> = {
+  cannon: 'cannon',
+  freightPod: 'freightPod',
+  booster: 'booster',
+}
+
+export function validateMothershipUpgrade(
+  match: Match,
+  playerId: PlayerId,
+  kind: MothershipUpgradeKind,
+): DomainResult<null> {
+  const context = checkBuildContext(match, playerId)
+  if (!context.success) {
+    return context
+  }
+  const player = context.value
+
+  if (!canAddUpgrade(player.mothership, kind)) {
+    return failure(
+      'UPGRADE_LIMIT_REACHED',
+      `A Mothership may carry at most ${String(getMothershipUpgradeLimit(kind))} of that upgrade.`,
+      'mothership',
+    )
+  }
+  if (!canAffordBuild(player, UPGRADE_ACTION[kind])) {
+    return failure('INSUFFICIENT_RESOURCES', 'Cannot afford that upgrade.', 'resources')
+  }
+  return { success: true, value: null }
+}
+
+export function buildMothershipUpgrade(
+  match: Match,
+  playerId: PlayerId,
+  kind: MothershipUpgradeKind,
+): DomainResult<Match> {
+  const validation = validateMothershipUpgrade(match, playerId, kind)
+  if (!validation.success) {
+    return validation
+  }
+  const player = match.playersById[playerId]
+  if (player === undefined) {
+    return failure('UNKNOWN_PLAYER', 'No such player in this match.', 'playerId')
+  }
+
+  let working = payCost(match, player, UPGRADE_ACTION[kind])
+  const paidPlayer = working.playersById[playerId]
+  if (paidPlayer === undefined) {
+    return failure('UNKNOWN_PLAYER', 'No such player in this match.', 'playerId')
+  }
+
+  const mothership = addUpgrade(paidPlayer.mothership, kind)
+  const updated: Player = { ...paidPlayer, mothership }
+
+  working = { ...working, playersById: { ...working.playersById, [playerId]: updated } }
+
+  const total =
+    kind === 'cannon'
+      ? mothership.cannons
+      : kind === 'freightPod'
+        ? mothership.freightPods
+        : mothership.boosters
+
+  return {
+    success: true,
+    value: appendEvent(working, (sequence) => ({
+      sequence,
+      type: 'MothershipUpgraded',
+      playerId,
+      upgrade: kind,
+      total,
+    })),
+  }
 }

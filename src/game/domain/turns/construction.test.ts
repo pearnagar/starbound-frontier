@@ -1,639 +1,370 @@
 import { describe, expect, it } from 'vitest'
-import { getHexEdges } from '../board/edge'
-import { getHexVertices } from '../board/vertex'
-import { createStructure } from '../buildings/structure'
-import { createTradeRoute } from '../routes/trade-route'
-import { asPlayerId } from '../types/ids'
-import type { ResourceInventory } from '../types/resources'
+import { asIntersectionId } from '../board/space-board'
+import { getBuildCost } from '../rules/rules-config'
+import { createResourceInventory } from '../types/resources'
 import {
-  buildOutpost,
-  buildTradeRoute,
-  canAffordBuild,
-  getLegalOutpostVertices,
-  getLegalTradeRouteEdges,
-  getPlayerBankTradeRate,
-  upgradeToColony,
-  upgradeToNexus,
-  validateColonyUpgrade,
-  validateNexusUpgrade,
-  validateOutpostBuild,
-  validateTradeRouteBuild,
+  buildMothershipUpgrade,
+  buildShip,
+  buildSpaceport,
+  getAvailableSpaceportSites,
+  getUpgradeableColonies,
+  validateShipBuild,
+  validateSpaceportBuild,
 } from './construction'
-import { getBuildCost } from './construction-config'
-import { asMatchId } from './match-id'
 import type { Match } from './match'
-import { getProductionDemand } from './production'
-import { createResourceBank } from './resource-bank'
-import { allVisible, baseBoard, makePlayer, withSectors } from './test-fixtures'
+import { listPlayerShips, listPlayerSiteStructures } from './match'
+import { createTestMatch } from './test-fixtures'
 
-const p1 = asPlayerId('p1')
-const p2 = asPlayerId('p2')
-const p3 = asPlayerId('p3')
+function expectSuccess<T>(result: { success: boolean; value?: T; errors?: unknown }): T {
+  expect(result.success).toBe(true)
+  if (!result.success || result.value === undefined) {
+    throw new Error(`Expected success, got ${JSON.stringify(result.errors)}`)
+  }
+  return result.value
+}
 
-function inventory(overrides: Partial<ResourceInventory> = {}): ResourceInventory {
+/** A match in Trade & Build with the active player richly supplied. */
+function buildableMatch(): Match {
+  const base = createTestMatch()
+  const activeId = base.activePlayerId
   return {
-    alloy: 0,
-    plasma: 0,
-    cryonite: 0,
-    biofiber: 0,
-    quantumCore: 0,
-    ...overrides,
+    ...base,
+    phase: 'tradeAndBuild',
+    playersById: {
+      ...base.playersById,
+      [activeId]: {
+        ...base.playersById[activeId]!,
+        resources: createResourceInventory({
+          alloy: 10,
+          plasma: 10,
+          cryonite: 10,
+          biofiber: 10,
+          quantumCore: 10,
+        }),
+      },
+    },
   }
 }
 
-const AMPLE = inventory({ alloy: 20, plasma: 20, cryonite: 20, biofiber: 20, quantumCore: 20 })
+describe('spaceport construction', () => {
+  it('costs 3 cryonite and 2 biofiber', () => {
+    expect(getBuildCost('spaceport')).toEqual(createResourceInventory({ cryonite: 3, biofiber: 2 }))
+  })
 
-function matchFor(
-  overrides: Partial<Match> = {},
-  players: readonly ReturnType<typeof makePlayer>[] = [makePlayer(p1, 0), makePlayer(p2, 1)],
-): Match {
-  const board = allVisible(baseBoard())
-  const playersById: Record<string, ReturnType<typeof makePlayer>> = {}
-  for (const player of players) {
-    playersById[player.id] = player
-  }
-  return {
-    matchId: asMatchId('m'),
-    board,
-    playersById,
-    playerOrder: players.map((player) => player.id),
-    activePlayerId: p1,
-    activePlayerIndex: 0,
-    turnNumber: 1,
-    phase: 'build',
-    randomState: 1,
-    structures: {},
-    routes: {},
-    bank: createResourceBank(),
-    marauderCoordinate: { q: 3, r: -3 },
-    events: [],
-    eventSequence: 0,
-    status: 'inProgress',
-    ...overrides,
-  }
-}
+  it('upgrades an owned Colony and consumes one Shipyard', () => {
+    const match = buildableMatch()
+    const target = asIntersectionId('i-colony-a')
+    const before = match.playersById[match.activePlayerId]!
 
-function withResources(match: Match, playerId: string, resources: ResourceInventory): Match {
-  const player = match.playersById[playerId]
-  if (player === undefined) throw new Error('player not found')
-  return { ...match, playersById: { ...match.playersById, [playerId]: { ...player, resources } } }
-}
+    const after = expectSuccess(buildSpaceport(match, match.activePlayerId, target))
+    const player = after.playersById[after.activePlayerId]!
 
-/** origin hex vertices/edges, used throughout as a concrete anchor. */
-const [originNorth, originNorthEast] = getHexVertices({ q: 0, r: 0 })
-const [originNorthEdge] = getHexEdges({ q: 0, r: 0 })
+    expect(after.structures[target]?.type).toBe('spaceport')
+    expect(player.pieceSupply.shipyards).toBe(before.pieceSupply.shipyards - 1)
+    // The Colony piece stays part of the Spaceport, so none is returned.
+    expect(player.pieceSupply.colonies).toBe(before.pieceSupply.colonies)
+  })
 
-describe('costs and spending', () => {
-  it('exposes exact costs', () => {
-    expect(getBuildCost('tradeRoute')).toEqual(inventory({ alloy: 1, plasma: 1 }))
-    expect(getBuildCost('outpost')).toEqual(
-      inventory({ alloy: 1, plasma: 1, cryonite: 1, biofiber: 1 }),
+  it('pays the cost into the Supply', () => {
+    const match = buildableMatch()
+    const before = match.supply.quantities
+    const after = expectSuccess(
+      buildSpaceport(match, match.activePlayerId, asIntersectionId('i-colony-a')),
     )
-    expect(getBuildCost('colony')).toEqual(inventory({ biofiber: 2, cryonite: 2, quantumCore: 1 }))
-    expect(getBuildCost('nexus')).toEqual(inventory({ alloy: 3, quantumCore: 2, plasma: 1 }))
+    expect(after.supply.quantities.cryonite).toBe(before.cryonite + 3)
+    expect(after.supply.quantities.biofiber).toBe(before.biofiber + 2)
+
+    const player = after.playersById[after.activePlayerId]!
+    expect(player.resources.cryonite).toBe(7)
+    expect(player.resources.biofiber).toBe(8)
   })
 
-  it('canAffordBuild is true with sufficient resources', () => {
-    expect(canAffordBuild(inventory({ alloy: 1, plasma: 1 }), 'tradeRoute')).toBe(true)
-  })
-
-  it('canAffordBuild is false with insufficient resources, and no mutation occurs on a failed build', () => {
-    let match = matchFor()
-    match = withResources(match, p1, inventory({ alloy: 0, plasma: 1 }))
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-    const before = JSON.stringify(match)
-
-    const result = buildTradeRoute(match, p1, originNorthEdge)
+  it('rejects upgrading a site that is already a Spaceport', () => {
+    const match = buildableMatch()
+    const result = validateSpaceportBuild(
+      match,
+      match.activePlayerId,
+      asIntersectionId('i-colony-c'),
+    )
     expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('INSUFFICIENT_RESOURCES')
-    expect(JSON.stringify(match)).toBe(before)
+    if (!result.success) {
+      expect(result.errors[0]?.code).toBe('NOT_A_COLONY')
+    }
   })
 
-  it('spent resources return to the bank', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-    const bankBefore = match.bank.quantities
-
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    expect(result.value.bank.quantities.alloy).toBe(bankBefore.alloy + 1)
-    expect(result.value.bank.quantities.plasma).toBe(bankBefore.plasma + 1)
+  it('rejects upgrading another player’s Colony', () => {
+    const match = buildableMatch()
+    const result = validateSpaceportBuild(
+      match,
+      match.activePlayerId,
+      asIntersectionId('i-colony-d'),
+    )
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.errors[0]?.code).toBe('NOT_OWNER')
+    }
   })
 
-  it('spending is atomic: player resources decrease by exactly the cost', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    const result = buildOutpost(
-      {
+  it('rejects building without enough resources', () => {
+    const base = createTestMatch()
+    const poor: Match = { ...base, phase: 'tradeAndBuild' }
+    const result = validateSpaceportBuild(poor, poor.activePlayerId, asIntersectionId('i-colony-a'))
+    expect(result.success).toBe(false)
+  })
+
+  it('lists only the player’s own Colonies as upgradeable', () => {
+    const match = buildableMatch()
+    const upgradeable = getUpgradeableColonies(match, match.activePlayerId)
+    expect(upgradeable.slice().sort()).toEqual(['i-colony-a', 'i-colony-b'])
+  })
+
+  it('rejects building outside Trade & Build', () => {
+    const match: Match = { ...buildableMatch(), phase: 'roll' }
+    const result = validateSpaceportBuild(
+      match,
+      match.activePlayerId,
+      asIntersectionId('i-colony-a'),
+    )
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.errors[0]?.code).toBe('WRONG_PHASE')
+    }
+  })
+})
+
+describe('ship construction', () => {
+  it('costs 1 alloy + 1 plasma + 1 cryonite + 1 biofiber for a Colony Ship', () => {
+    expect(getBuildCost('colonyShip')).toEqual(
+      createResourceInventory({ alloy: 1, plasma: 1, cryonite: 1, biofiber: 1 }),
+    )
+  })
+
+  it('costs 1 alloy + 1 plasma + 2 quantumCore for a Trade Ship', () => {
+    expect(getBuildCost('tradeShip')).toEqual(
+      createResourceInventory({ alloy: 1, plasma: 1, quantumCore: 2 }),
+    )
+  })
+
+  it('consumes a Transport Ship and a Colony for a Colony Ship', () => {
+    const match = buildableMatch()
+    const before = match.playersById[match.activePlayerId]!
+    const site = getAvailableSpaceportSites(match, match.activePlayerId)[0]!
+
+    const after = expectSuccess(
+      buildShip(match, match.activePlayerId, 'colonyShip', site.intersectionId),
+    )
+    const player = after.playersById[after.activePlayerId]!
+
+    expect(player.pieceSupply.transportShips).toBe(before.pieceSupply.transportShips - 1)
+    expect(player.pieceSupply.colonies).toBe(before.pieceSupply.colonies - 1)
+    expect(player.pieceSupply.tradeStations).toBe(before.pieceSupply.tradeStations)
+  })
+
+  it('consumes a Transport Ship and a Trade Station for a Trade Ship', () => {
+    const match = buildableMatch()
+    const before = match.playersById[match.activePlayerId]!
+    const site = getAvailableSpaceportSites(match, match.activePlayerId)[0]!
+
+    const after = expectSuccess(
+      buildShip(match, match.activePlayerId, 'tradeShip', site.intersectionId),
+    )
+    const player = after.playersById[after.activePlayerId]!
+
+    expect(player.pieceSupply.transportShips).toBe(before.pieceSupply.transportShips - 1)
+    expect(player.pieceSupply.tradeStations).toBe(before.pieceSupply.tradeStations - 1)
+    expect(player.pieceSupply.colonies).toBe(before.pieceSupply.colonies)
+  })
+
+  it('places the ship on the chosen spaceport site', () => {
+    const match = buildableMatch()
+    const site = getAvailableSpaceportSites(match, match.activePlayerId)[0]!
+    const after = expectSuccess(
+      buildShip(match, match.activePlayerId, 'colonyShip', site.intersectionId),
+    )
+    const ships = listPlayerShips(after, after.activePlayerId)
+    const built = ships.find((ship) => ship.intersectionId === site.intersectionId)
+    expect(built).toBeDefined()
+    expect(built?.type).toBe('colonyShip')
+  })
+
+  it('marks a newly built ship as movable this turn', () => {
+    const match = buildableMatch()
+    const site = getAvailableSpaceportSites(match, match.activePlayerId)[0]!
+    const after = expectSuccess(
+      buildShip(match, match.activePlayerId, 'tradeShip', site.intersectionId),
+    )
+    const built = listPlayerShips(after, after.activePlayerId).find(
+      (ship) => ship.intersectionId === site.intersectionId,
+    )
+    expect(built?.builtThisTurn).toBe(true)
+  })
+
+  it('rejects an occupied spaceport site', () => {
+    const match = buildableMatch()
+    // The starting Colony Ship already sits on i-port-a.
+    const result = validateShipBuild(
+      match,
+      match.activePlayerId,
+      'colonyShip',
+      asIntersectionId('i-port-a'),
+    )
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.errors[0]?.code).toBe('INVALID_SPACEPORT_SITE')
+    }
+  })
+
+  it('rejects a site the player has no Spaceport for', () => {
+    const base = createTestMatch()
+    const other = base.playerOrder[1]!
+    const match: Match = {
+      ...base,
+      phase: 'tradeAndBuild',
+      activePlayerId: other,
+      activePlayerIndex: 1,
+      playersById: {
+        ...base.playersById,
+        [other]: {
+          ...base.playersById[other]!,
+          resources: createResourceInventory({
+            alloy: 5,
+            plasma: 5,
+            cryonite: 5,
+            biofiber: 5,
+            quantumCore: 5,
+          }),
+        },
+      },
+    }
+    // Seat 1's Spaceport is at i-colony-f; the fixture puts every spaceport
+    // site in one system, so ownership is what gates the build.
+    const result = validateShipBuild(match, other, 'colonyShip', asIntersectionId('i-port-a'))
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects building with no Transport Ship left', () => {
+    const match = buildableMatch()
+    const activeId = match.activePlayerId
+    const drained: Match = {
+      ...match,
+      playersById: {
+        ...match.playersById,
+        [activeId]: {
+          ...match.playersById[activeId]!,
+          pieceSupply: { ...match.playersById[activeId]!.pieceSupply, transportShips: 0 },
+        },
+      },
+    }
+    const site = getAvailableSpaceportSites(drained, activeId)[0]!
+    const result = validateShipBuild(drained, activeId, 'colonyShip', site.intersectionId)
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.errors[0]?.code).toBe('NO_PIECE_AVAILABLE')
+    }
+  })
+})
+
+describe('mothership upgrades', () => {
+  it('adds a cannon for 2 cryonite', () => {
+    const match = buildableMatch()
+    const after = expectSuccess(buildMothershipUpgrade(match, match.activePlayerId, 'cannon'))
+    expect(after.playersById[after.activePlayerId]!.mothership.cannons).toBe(1)
+    expect(after.playersById[after.activePlayerId]!.resources.cryonite).toBe(8)
+  })
+
+  it('adds a freight pod for 2 alloy and a booster for 2 plasma', () => {
+    const match = buildableMatch()
+    const pod = expectSuccess(buildMothershipUpgrade(match, match.activePlayerId, 'freightPod'))
+    expect(pod.playersById[pod.activePlayerId]!.mothership.freightPods).toBe(1)
+    expect(pod.playersById[pod.activePlayerId]!.resources.alloy).toBe(8)
+
+    const booster = expectSuccess(buildMothershipUpgrade(match, match.activePlayerId, 'booster'))
+    // Players start with 1 booster.
+    expect(booster.playersById[booster.activePlayerId]!.mothership.boosters).toBe(2)
+    expect(booster.playersById[booster.activePlayerId]!.resources.plasma).toBe(8)
+  })
+
+  it('enforces the 6-cannon limit', () => {
+    const match = buildableMatch()
+    const activeId = match.activePlayerId
+    const maxed: Match = {
+      ...match,
+      playersById: {
+        ...match.playersById,
+        [activeId]: {
+          ...match.playersById[activeId]!,
+          mothership: { ...match.playersById[activeId]!.mothership, cannons: 6 },
+        },
+      },
+    }
+    const result = buildMothershipUpgrade(maxed, activeId, 'cannon')
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.errors[0]?.code).toBe('UPGRADE_LIMIT_REACHED')
+    }
+  })
+
+  it('enforces the 5-freight-pod and 6-booster limits', () => {
+    const match = buildableMatch()
+    const activeId = match.activePlayerId
+    for (const [kind, count] of [
+      ['freightPod', 5],
+      ['booster', 6],
+    ] as const) {
+      const maxed: Match = {
         ...match,
-        structures: {},
-        routes: { [originNorthEdge]: createTradeRoute(originNorthEdge, p1) },
-      },
-      p1,
-      originNorth,
-    )
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    const cost = getBuildCost('outpost')
-    for (const type of Object.keys(cost) as (keyof ResourceInventory)[]) {
-      expect(result.value.playersById[p1]?.resources[type]).toBe(AMPLE[type] - cost[type])
+        playersById: {
+          ...match.playersById,
+          [activeId]: {
+            ...match.playersById[activeId]!,
+            mothership: {
+              ...match.playersById[activeId]!.mothership,
+              [kind === 'freightPod' ? 'freightPods' : 'boosters']: count,
+            },
+          },
+        },
+      }
+      expect(buildMothershipUpgrade(maxed, activeId, kind).success).toBe(false)
     }
   })
 })
 
-describe('trade routes', () => {
-  it('a route connected to an owned structure succeeds', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = {
-      ...match,
-      structures: { [originNorth]: createStructure('outpost', originNorth, p1) },
-    }
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    expect(result.value.routes[originNorthEdge]?.ownerId).toBe(p1)
+describe('interleaved trade and build', () => {
+  it('allows repeated builds without leaving the phase', () => {
+    const match = buildableMatch()
+    const first = expectSuccess(buildMothershipUpgrade(match, match.activePlayerId, 'cannon'))
+    expect(first.phase).toBe('tradeAndBuild')
+
+    const second = expectSuccess(buildMothershipUpgrade(first, first.activePlayerId, 'freightPod'))
+    expect(second.phase).toBe('tradeAndBuild')
+    expect(second.playersById[second.activePlayerId]!.mothership.cannons).toBe(1)
+    expect(second.playersById[second.activePlayerId]!.mothership.freightPods).toBe(1)
   })
 
-  it('a disconnected edge fails', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('ROUTE_NOT_CONNECTED')
-  })
-
-  it('an occupied edge fails', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = {
-      ...match,
-      structures: { [originNorth]: createStructure('outpost', originNorth, p1) },
-      routes: { [originNorthEdge]: createTradeRoute(originNorthEdge, p1) },
-    }
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('EDGE_OCCUPIED')
-  })
-
-  it('an off-board edge fails validation', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    const result = validateTradeRouteBuild(match, p1, 'not,a|real,edge' as never)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('EDGE_NOT_ON_BOARD')
-  })
-
-  it('connectivity through an own structure succeeds', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-    expect(getLegalTradeRouteEdges(match, p1)).toContain(originNorthEdge)
-  })
-
-  it('connectivity through an opponent structure is blocked', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p2) } }
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('ROUTE_NOT_CONNECTED')
-  })
-
-  it('route supply decreases by one', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-    const before = match.playersById[p1]?.pieceSupply.tradeRoutes
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(true)
-    if (!result.success || before === undefined) return
-    expect(result.value.playersById[p1]?.pieceSupply.tradeRoutes).toBe(before - 1)
-  })
-
-  it('allows repeated route builds within the same build phase', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-    const first = buildTradeRoute(match, p1, originNorthEdge)
-    expect(first.success).toBe(true)
-    if (!first.success) return
-    expect(first.value.phase).toBe('build')
-
-    const [, secondEdge] = getHexEdges({ q: 0, r: 0 })
-    const second = buildTradeRoute(first.value, p1, secondEdge)
-    expect(second.success).toBe(true)
+  it('does not mutate the match passed in', () => {
+    const match = buildableMatch()
+    const snapshot = JSON.parse(JSON.stringify(match)) as unknown
+    expectSuccess(buildSpaceport(match, match.activePlayerId, asIntersectionId('i-colony-a')))
+    expect(JSON.parse(JSON.stringify(match)) as unknown).toEqual(snapshot)
   })
 })
 
-describe('outposts', () => {
-  function matchWithOwnRoute(): Match {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    return { ...match, routes: { [originNorthEdge]: createTradeRoute(originNorthEdge, p1) } }
-  }
-
-  it('a route-connected legal vertex succeeds', () => {
-    const match = matchWithOwnRoute()
-    const result = buildOutpost(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    expect(result.value.structures[originNorth]).toEqual({
-      type: 'outpost',
-      vertexId: originNorth,
-      ownerId: p1,
-    })
-  })
-
-  it('an unconnected vertex fails', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    const result = buildOutpost(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('OUTPOST_NOT_CONNECTED')
-  })
-
-  it('an occupied vertex fails', () => {
-    let match = matchWithOwnRoute()
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p2) } }
-    const result = buildOutpost(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('VERTEX_OCCUPIED')
-  })
-
-  it('an adjacent structure blocks placement', () => {
-    let match = matchWithOwnRoute()
-    match = {
-      ...match,
-      structures: { [originNorthEast]: createStructure('outpost', originNorthEast, p2) },
+describe('obsolete construction actions', () => {
+  it('no longer exposes route, outpost, or nexus builders', () => {
+    const constructionModule: Record<string, unknown> = {
+      buildSpaceport,
+      buildShip,
+      buildMothershipUpgrade,
     }
-    const result = buildOutpost(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('ADJACENT_STRUCTURE_BLOCKED')
+    expect(constructionModule).not.toHaveProperty('buildTradeRoute')
+    expect(constructionModule).not.toHaveProperty('buildOutpost')
+    expect(constructionModule).not.toHaveProperty('upgradeToNexus')
   })
 
-  it('a non-adjacent placement remains legal', () => {
-    const match = matchWithOwnRoute()
-    expect(getLegalOutpostVertices(match, p1)).toContain(originNorth)
-  })
-
-  it('an off-board vertex fails validation', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    const result = validateOutpostBuild(match, p1, 'not,a,real' as never)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('VERTEX_NOT_ON_BOARD')
-  })
-
-  it('a hidden-only vertex fails', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    const hiddenBoard = withSectors(match.board, {
-      '0,0': { visibility: 'hidden' },
-      '0,-1': { visibility: 'hidden' },
-      '1,-1': { visibility: 'hidden' },
-    })
-    match = {
-      ...match,
-      board: hiddenBoard,
-      routes: { [originNorthEdge]: createTradeRoute(originNorthEdge, p1) },
+  it('keeps starting structures limited to Colonies and Spaceports', () => {
+    const match = createTestMatch()
+    for (const structure of listPlayerSiteStructures(match, match.activePlayerId)) {
+      expect(['colony', 'spaceport']).toContain(structure.type)
     }
-    const result = buildOutpost(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('HIDDEN_ONLY_VERTEX')
-  })
-
-  it('outpost supply decreases by one', () => {
-    const match = matchWithOwnRoute()
-    const before = match.playersById[p1]?.pieceSupply.outposts
-    const result = buildOutpost(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success || before === undefined) return
-    expect(result.value.playersById[p1]?.pieceSupply.outposts).toBe(before - 1)
-  })
-
-  it('grants no starting resources', () => {
-    const match = matchWithOwnRoute()
-    const alloyBefore = match.playersById[p1]?.resources.alloy ?? 0
-    const result = buildOutpost(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    const cost = getBuildCost('outpost')
-    expect(result.value.playersById[p1]?.resources.alloy).toBe(alloyBefore - cost.alloy)
-  })
-})
-
-describe('colony upgrades', () => {
-  function matchWithOutpost(owner = p1): Match {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    return {
-      ...match,
-      structures: { [originNorth]: createStructure('outpost', originNorth, owner) },
-    }
-  }
-
-  it('own Outpost upgrades successfully', () => {
-    const match = matchWithOutpost()
-    const result = upgradeToColony(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    expect(result.value.structures[originNorth]).toEqual({
-      type: 'colony',
-      vertexId: originNorth,
-      ownerId: p1,
-    })
-  })
-
-  it('an opponent Outpost fails', () => {
-    const match = matchWithOutpost(p2)
-    const result = upgradeToColony(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('NOT_YOUR_STRUCTURE')
-  })
-
-  it('an empty vertex fails', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    const result = validateColonyUpgrade(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('UPGRADE_TARGET_MISSING')
-  })
-
-  it('wrong structure type fails', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('colony', originNorth, p1) } }
-    const result = upgradeToColony(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('WRONG_STRUCTURE_TYPE')
-  })
-
-  it('Colony supply decreases and Outpost returns to supply', () => {
-    const match = matchWithOutpost()
-    const before = match.playersById[p1]?.pieceSupply
-    const result = upgradeToColony(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success || before === undefined) return
-    expect(result.value.playersById[p1]?.pieceSupply.colonies).toBe(before.colonies - 1)
-    expect(result.value.playersById[p1]?.pieceSupply.outposts).toBe(before.outposts + 1)
-  })
-
-  it('spends resources correctly', () => {
-    const match = matchWithOutpost()
-    const result = upgradeToColony(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    const cost = getBuildCost('colony')
-    expect(result.value.playersById[p1]?.resources.biofiber).toBe(AMPLE.biofiber - cost.biofiber)
-    expect(result.value.playersById[p1]?.resources.cryonite).toBe(AMPLE.cryonite - cost.cryonite)
-    expect(result.value.playersById[p1]?.resources.quantumCore).toBe(
-      AMPLE.quantumCore - cost.quantumCore,
-    )
-  })
-})
-
-describe('nexus upgrades', () => {
-  function matchWithColony(owner = p1): Match {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    return {
-      ...match,
-      structures: { [originNorth]: createStructure('colony', originNorth, owner) },
-    }
-  }
-
-  it('own Colony upgrades successfully', () => {
-    const match = matchWithColony()
-    const result = upgradeToNexus(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    expect(result.value.structures[originNorth]).toEqual({
-      type: 'nexus',
-      vertexId: originNorth,
-      ownerId: p1,
-    })
-  })
-
-  it('an opponent Colony fails', () => {
-    const match = matchWithColony(p2)
-    const result = upgradeToNexus(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('NOT_YOUR_STRUCTURE')
-  })
-
-  it('an Outpost cannot skip directly to Nexus', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-    const result = upgradeToNexus(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('WRONG_STRUCTURE_TYPE')
-  })
-
-  it('Nexus supply decreases and Colony returns to supply', () => {
-    const match = matchWithColony()
-    const before = match.playersById[p1]?.pieceSupply
-    const result = upgradeToNexus(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success || before === undefined) return
-    expect(result.value.playersById[p1]?.pieceSupply.nexus).toBe(before.nexus - 1)
-    expect(result.value.playersById[p1]?.pieceSupply.colonies).toBe(before.colonies + 1)
-  })
-
-  it('a missing upgrade target fails validation', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    const result = validateNexusUpgrade(match, p1, originNorth)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('UPGRADE_TARGET_MISSING')
-  })
-
-  it("owner's bank-trade rate becomes 3:1", () => {
-    const match = matchWithColony()
-    expect(getPlayerBankTradeRate(match, p1)).toBe(4)
-    const result = upgradeToNexus(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    expect(getPlayerBankTradeRate(result.value, p1)).toBe(3)
-  })
-})
-
-describe('production integration', () => {
-  function producingMatch(structureType: 'outpost' | 'colony' | 'nexus'): Match {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    return matchFor({
-      board,
-      structures: { [originNorth]: createStructure(structureType, originNorth, p1) },
-    })
-  }
-
-  it('Outpost produces 1', () => {
-    const demand = getProductionDemand(producingMatch('outpost'), 8)
-    expect(demand.totalDemand.alloy).toBe(1)
-  })
-
-  it('Colony produces 2', () => {
-    const demand = getProductionDemand(producingMatch('colony'), 8)
-    expect(demand.totalDemand.alloy).toBe(2)
-  })
-
-  it('Nexus produces 3', () => {
-    const demand = getProductionDemand(producingMatch('nexus'), 8)
-    expect(demand.totalDemand.alloy).toBe(3)
-  })
-
-  it('mixed structures aggregate correctly', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    const [north, northEast] = getHexVertices({ q: 0, r: 0 })
-    const match = matchFor({
-      board,
-      structures: {
-        [north]: createStructure('outpost', north, p1),
-        [northEast]: createStructure('colony', northEast, p3),
-      },
-    })
-    const demand = getProductionDemand(match, 8)
-    expect(demand.totalDemand.alloy).toBe(3)
-    expect(demand.grantsByPlayer[p1]?.alloy).toBe(1)
-    expect(demand.grantsByPlayer[p3]?.alloy).toBe(2)
-  })
-
-  it('Marauder blocking still works with structures', () => {
-    const match = { ...producingMatch('colony'), marauderCoordinate: { q: 0, r: 0 } }
-    const demand = getProductionDemand(match, 8)
-    expect(demand.totalDemand.alloy).toBe(0)
-    expect(demand.blockedSectors).toHaveLength(1)
-  })
-
-  it('bank shortage behavior remains unchanged (all-or-nothing)', () => {
-    const match = { ...producingMatch('nexus'), bank: createResourceBank(2) }
-    const demand = getProductionDemand(match, 8)
-    // Nexus demands 3 alloy but the bank only has 2 — this milestone doesn't
-    // change how getShortResources reports that; verify demand is unaffected
-    // by bank size (the shortage decision happens downstream in turn-transitions).
-    expect(demand.totalDemand.alloy).toBe(3)
-  })
-})
-
-describe('immutability and events', () => {
-  it('leaves the input match unchanged', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-    const snapshot = JSON.stringify(match)
-    const result = upgradeToColony(match, p1, originNorth)
-    expect(result.success).toBe(true)
-    expect(JSON.stringify(match)).toBe(snapshot)
-  })
-
-  it('earlier snapshots remain unchanged across a sequence of builds', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-    const beforeUpgrade = match
-
-    const upgraded = upgradeToColony(match, p1, originNorth)
-    expect(upgraded.success).toBe(true)
-    if (!upgraded.success) return
-
-    expect(beforeUpgrade.structures[originNorth]?.type).toBe('outpost')
-    expect(upgraded.value.structures[originNorth]?.type).toBe('colony')
-  })
-
-  it('produces no duplicate occupied vertices or edges after multiple builds', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-
-    const withRoute = buildTradeRoute(match, p1, originNorthEdge)
-    expect(withRoute.success).toBe(true)
-    if (!withRoute.success) return
-
-    expect(Object.keys(withRoute.value.routes)).toHaveLength(1)
-    expect(Object.keys(withRoute.value.structures)).toHaveLength(1)
-  })
-
-  it('event sequence numbers remain deterministic and strictly increasing', () => {
-    let match = matchFor()
-    match = withResources(match, p1, AMPLE)
-    match = { ...match, structures: { [originNorth]: createStructure('outpost', originNorth, p1) } }
-
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    const sequences = result.value.events.map((e) => e.sequence)
-    for (let i = 0; i < sequences.length; i += 1) {
-      expect(sequences[i]).toBe(i + 1)
-    }
-    expect(result.value.eventSequence).toBe(sequences.length)
-  })
-
-  it('a failed build emits no success events', () => {
-    let match = matchFor()
-    match = withResources(match, p1, inventory())
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(false)
-    expect(match.events).toHaveLength(0)
-  })
-})
-
-describe('construction timing', () => {
-  it('rejects construction when the match is not in progress', () => {
-    let match = matchFor({ status: 'complete' })
-    match = withResources(match, p1, AMPLE)
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('MATCH_NOT_IN_PROGRESS')
-  })
-
-  it('rejects construction outside the build phase', () => {
-    let match = matchFor({ phase: 'trade' })
-    match = withResources(match, p1, AMPLE)
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('WRONG_PHASE')
-  })
-
-  it('rejects construction by a non-active player', () => {
-    let match = matchFor()
-    match = withResources(match, p2, AMPLE)
-    const result = buildTradeRoute(match, p2, originNorthEdge)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('WRONG_ACTIVE_PLAYER')
-  })
-
-  it('rejects construction while a crisis is unresolved', () => {
-    let match = matchFor({ crisisState: { status: 'movingMarauder' } })
-    match = withResources(match, p1, AMPLE)
-    const result = buildTradeRoute(match, p1, originNorthEdge)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.errors[0]?.code).toBe('CRISIS_UNRESOLVED')
   })
 })

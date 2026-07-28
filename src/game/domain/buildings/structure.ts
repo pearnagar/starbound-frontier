@@ -1,38 +1,78 @@
-import type { VertexId } from '../board/vertex'
+import type { DockId, IntersectionId, OutpostId } from '../board/space-board'
+import { VICTORY_POINT_VALUES } from '../rules/rules-config'
 import type { PlayerId } from '../types/ids'
 
-/** Closed set of structure types a player may occupy a corner with. */
-export const STRUCTURE_TYPES = ['outpost', 'colony', 'nexus'] as const
+/**
+ * Structures that occupy a board position. A Spaceport is a Colony that has
+ * had a Shipyard built around it, so it is one structure worth 2 points in
+ * total rather than a Colony plus a separate Spaceport.
+ */
+export const STRUCTURE_TYPES = ['colony', 'spaceport', 'tradeStation'] as const
 
 export type StructureType = (typeof STRUCTURE_TYPES)[number]
 
-/**
- * A structure occupying a canonical board corner. `type` discriminates
- * between an Outpost, a Colony (Outpost upgrade), and a Nexus (Colony
- * upgrade) — all three share the same shape otherwise, so callers switch on
- * `type` rather than juggling unrelated parallel models.
- */
-export type Structure = Readonly<{
-  type: StructureType
-  vertexId: VertexId
+/** A Colony or Spaceport occupying a colony site. */
+export type SiteStructure = Readonly<{
+  type: 'colony' | 'spaceport'
+  intersectionId: IntersectionId
   ownerId: PlayerId
 }>
 
-export function createStructure(
-  type: StructureType,
-  vertexId: VertexId,
+/** A Trade Station occupying a dock at an alien outpost. */
+export type TradeStationStructure = Readonly<{
+  type: 'tradeStation'
+  outpostId: OutpostId
+  dockId: DockId
+  ownerId: PlayerId
+}>
+
+export type Structure = SiteStructure | TradeStationStructure
+
+export function createColony(intersectionId: IntersectionId, ownerId: PlayerId): SiteStructure {
+  return { type: 'colony', intersectionId, ownerId }
+}
+
+export function createSpaceport(intersectionId: IntersectionId, ownerId: PlayerId): SiteStructure {
+  return { type: 'spaceport', intersectionId, ownerId }
+}
+
+export function createTradeStation(
+  outpostId: OutpostId,
+  dockId: DockId,
   ownerId: PlayerId,
-): Structure {
-  return { type, vertexId, ownerId }
+): TradeStationStructure {
+  return { type: 'tradeStation', outpostId, dockId, ownerId }
 }
 
-/** Resource units this structure yields per matching production roll. */
-const STRUCTURE_PRODUCTION_VALUES: Readonly<Record<StructureType, number>> = {
-  outpost: 1,
-  colony: 2,
-  nexus: 3,
+export function isSiteStructure(structure: Structure): structure is SiteStructure {
+  return structure.type === 'colony' || structure.type === 'spaceport'
 }
 
+export function isTradeStation(structure: Structure): structure is TradeStationStructure {
+  return structure.type === 'tradeStation'
+}
+
+/**
+ * Resources this structure receives when an adjacent planet's number is
+ * rolled. A Colony and a Spaceport each receive exactly 1 — a Spaceport does
+ * not produce extra. Trade Stations receive no planetary production.
+ */
 export function getStructureProductionValue(type: StructureType): number {
-  return STRUCTURE_PRODUCTION_VALUES[type]
+  return type === 'tradeStation' ? 0 : 1
+}
+
+/**
+ * Victory points this structure contributes. A Spaceport is worth 2 in total,
+ * already accounting for the Colony it upgraded. Trade Stations score nothing
+ * directly — their points come from a Friendship Marker, handled separately.
+ */
+export function getStructureVictoryPoints(type: StructureType): number {
+  switch (type) {
+    case 'colony':
+      return VICTORY_POINT_VALUES.colony
+    case 'spaceport':
+      return VICTORY_POINT_VALUES.spaceport
+    case 'tradeStation':
+      return 0
+  }
 }

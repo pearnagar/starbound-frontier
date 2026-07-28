@@ -2,10 +2,16 @@
 
 An original digital space-strategy board game for Web and PC.
 
-This repository currently contains the **project foundation only** — application shell,
-tooling, and architecture scaffolding. No gameplay systems (board, resources, rules, AI,
-trading, scoring, etc.) have been implemented yet. See
-[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the milestone roadmap and
+This repository contains the **pure gameplay domain plus the application shell**. The domain
+implements resources, the board model, pieces and structures, beginner setup, turn flow,
+production, the roll of 7, supply trading, construction, and scoring. Ship movement,
+encounters, friendship cards, AI, persistence, and the full UI are not implemented yet.
+
+The board topology is supplied as configuration rather than generated, so there is no playable
+default board yet — see [docs/RULEBOOK_GAPS.md](docs/RULEBOOK_GAPS.md).
+
+See [docs/GAME_RULES.md](docs/GAME_RULES.md) for the rules as implemented,
+[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the milestone roadmap, and
 [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for current status.
 
 ## Stack
@@ -44,8 +50,20 @@ The dev server prints a local URL to open in your browser.
 
 ## Project structure
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the intended layering
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layering
 (domain / application / infrastructure / presentation) and the full planned folder tree.
+
+## Documentation
+
+| Document                                              | Contents                                     |
+| ----------------------------------------------------- | -------------------------------------------- |
+| [GAME_RULES.md](docs/GAME_RULES.md)                   | The rules as implemented                     |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md)               | Layering and domain design                   |
+| [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | Milestone roadmap                            |
+| [PROJECT_STATUS.md](docs/PROJECT_STATUS.md)           | What is built and verified                   |
+| [DECISIONS.md](docs/DECISIONS.md)                     | Design decision log                          |
+| [RULEBOOK_ALIGNMENT.md](docs/RULEBOOK_ALIGNMENT.md)   | Rules migration record                       |
+| [RULEBOOK_GAPS.md](docs/RULEBOOK_GAPS.md)             | Unresolved rules questions, never guessed at |
 
 ## Path aliases
 

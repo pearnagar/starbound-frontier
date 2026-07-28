@@ -1,17 +1,24 @@
-import type { ProductionNumber } from '../board/production-number'
-import type { EdgeId } from '../board/edge'
-import type { HexCoordinate } from '../board/hex-coordinate'
-import type { VertexId } from '../board/vertex'
+import type {
+  DockId,
+  IntersectionId,
+  OutpostId,
+  PlanetId,
+  PlanetProductionNumber,
+  SystemId,
+} from '../board/space-board'
+import type { ShipId, ShipType } from '../buildings/ship'
+import type { BuildAction } from '../rules/rules-config'
 import type { PlayerId } from '../types/ids'
 import type { PieceSupply } from '../types/piece-supply'
 import type { ResourceInventory, ResourceType } from '../types/resources'
-import type { CrisisDiscardRequirement } from './crisis-state'
-import type { ConstructionAction } from './construction-config'
 
 /**
  * Minimal serializable domain events. Every event carries a deterministic
  * `sequence` (assigned by the match, starting at 1) and no timestamps —
  * ordering is the only temporal information the domain records.
+ *
+ * Hidden information never appears here: Reserve draws record a count, and a
+ * theft records the players but not the stolen resource.
  */
 
 export type TurnStartedEvent = Readonly<{
@@ -30,12 +37,12 @@ export type DiceRolledEvent = Readonly<{
   total: number
 }>
 
-export type SectorProducedEvent = Readonly<{
+export type PlanetProducedEvent = Readonly<{
   sequence: number
-  type: 'SectorProduced'
-  coordinate: HexCoordinate
+  type: 'PlanetProduced'
+  planetId: PlanetId
   resource: ResourceType
-  productionNumber: ProductionNumber
+  productionNumber: PlanetProductionNumber
   structureCount: number
   unitCount: number
 }>
@@ -61,6 +68,14 @@ export type ProductionResolvedEvent = Readonly<{
   total: number
 }>
 
+/** Cards drawn from the face-down Reserve pile; contents stay hidden. */
+export type ReserveCardsDrawnEvent = Readonly<{
+  sequence: number
+  type: 'ReserveCardsDrawn'
+  playerId: PlayerId
+  count: number
+}>
+
 export type TurnEndedEvent = Readonly<{
   sequence: number
   type: 'TurnEnded'
@@ -68,10 +83,11 @@ export type TurnEndedEvent = Readonly<{
   turnNumber: number
 }>
 
-export type CrisisStartedEvent = Readonly<{
+export type SevenRolledEvent = Readonly<{
   sequence: number
-  type: 'CrisisStarted'
-  requirements: readonly CrisisDiscardRequirement[]
+  type: 'SevenRolled'
+  playerId: PlayerId
+  discardRequirements: readonly Readonly<{ playerId: PlayerId; requiredCount: number }>[]
 }>
 
 export type ResourcesDiscardedEvent = Readonly<{
@@ -79,14 +95,6 @@ export type ResourcesDiscardedEvent = Readonly<{
   type: 'ResourcesDiscarded'
   playerId: PlayerId
   discarded: ResourceInventory
-}>
-
-export type MarauderMovedEvent = Readonly<{
-  sequence: number
-  type: 'MarauderMoved'
-  playerId: PlayerId
-  from: HexCoordinate
-  to: HexCoordinate
 }>
 
 export type ResourceStolenEvent = Readonly<{
@@ -97,51 +105,64 @@ export type ResourceStolenEvent = Readonly<{
   /** The stolen resource is intentionally omitted from the public event. */
 }>
 
-export type CrisisCompletedEvent = Readonly<{
+export type SevenResolvedEvent = Readonly<{
   sequence: number
-  type: 'CrisisCompleted'
+  type: 'SevenResolved'
   playerId: PlayerId
 }>
 
-export type ProductionBlockedByMarauderEvent = Readonly<{
+export type SpaceportBuiltEvent = Readonly<{
   sequence: number
-  type: 'ProductionBlockedByMarauder'
-  coordinate: HexCoordinate
+  type: 'SpaceportBuilt'
+  playerId: PlayerId
+  intersectionId: IntersectionId
 }>
 
-export type TradeRouteBuiltEvent = Readonly<{
+export type ShipBuiltEvent = Readonly<{
   sequence: number
-  type: 'TradeRouteBuilt'
+  type: 'ShipBuilt'
   playerId: PlayerId
-  edgeId: EdgeId
+  shipId: ShipId
+  shipType: ShipType
+  intersectionId: IntersectionId
 }>
 
-export type OutpostBuiltEvent = Readonly<{
+export type ColonyEstablishedEvent = Readonly<{
   sequence: number
-  type: 'OutpostBuilt'
+  type: 'ColonyEstablished'
   playerId: PlayerId
-  vertexId: VertexId
+  intersectionId: IntersectionId
 }>
 
-export type ColonyUpgradedEvent = Readonly<{
+export type TradeStationEstablishedEvent = Readonly<{
   sequence: number
-  type: 'ColonyUpgraded'
+  type: 'TradeStationEstablished'
   playerId: PlayerId
-  vertexId: VertexId
+  outpostId: OutpostId
+  dockId: DockId
 }>
 
-export type NexusUpgradedEvent = Readonly<{
+export type MothershipUpgradedEvent = Readonly<{
   sequence: number
-  type: 'NexusUpgraded'
+  type: 'MothershipUpgraded'
   playerId: PlayerId
-  vertexId: VertexId
+  upgrade: 'cannon' | 'freightPod' | 'booster'
+  total: number
+}>
+
+export type PlanetarySystemExploredEvent = Readonly<{
+  sequence: number
+  type: 'PlanetarySystemExplored'
+  playerId: PlayerId
+  systemId: SystemId
+  revealedPlanetIds: readonly PlanetId[]
 }>
 
 export type ResourcesSpentEvent = Readonly<{
   sequence: number
   type: 'ResourcesSpent'
   playerId: PlayerId
-  action: ConstructionAction
+  action: BuildAction
   spent: ResourceInventory
 }>
 
@@ -152,28 +173,45 @@ export type PieceSupplyChangedEvent = Readonly<{
   pieceSupply: PieceSupply
 }>
 
+export type VictoryPointsChangedEvent = Readonly<{
+  sequence: number
+  type: 'VictoryPointsChanged'
+  playerId: PlayerId
+  victoryPoints: number
+}>
+
+export type MatchWonEvent = Readonly<{
+  sequence: number
+  type: 'MatchWon'
+  playerId: PlayerId
+  victoryPoints: number
+}>
+
 export type MatchEvent =
   | TurnStartedEvent
   | DiceRolledEvent
-  | SectorProducedEvent
+  | PlanetProducedEvent
   | ResourcesGrantedEvent
   | ResourceShortageEvent
   | ProductionResolvedEvent
+  | ReserveCardsDrawnEvent
   | TurnEndedEvent
-  | CrisisStartedEvent
+  | SevenRolledEvent
   | ResourcesDiscardedEvent
-  | MarauderMovedEvent
   | ResourceStolenEvent
-  | CrisisCompletedEvent
-  | ProductionBlockedByMarauderEvent
-  | TradeRouteBuiltEvent
-  | OutpostBuiltEvent
-  | ColonyUpgradedEvent
-  | NexusUpgradedEvent
+  | SevenResolvedEvent
+  | SpaceportBuiltEvent
+  | ShipBuiltEvent
+  | ColonyEstablishedEvent
+  | TradeStationEstablishedEvent
+  | MothershipUpgradedEvent
+  | PlanetarySystemExploredEvent
   | ResourcesSpentEvent
   | PieceSupplyChangedEvent
+  | VictoryPointsChangedEvent
+  | MatchWonEvent
 
-/** Builds the next event and the sequence number that follows it. */
+/** Builds the next event sequence number. */
 export function nextEventSequence(currentSequence: number): number {
   return currentSequence + 1
 }

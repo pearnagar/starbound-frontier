@@ -4,218 +4,119 @@ _Last updated: 2026-07-29_
 
 ## Current milestone
 
-Milestone 8 — Construction: **complete and verified**. (Milestones 1–7: complete and
-verified.)
+Milestone 9 — Rulebook alignment refactor: **complete and verified**.
+
+Milestones 1–8 built a plausible but incorrect rules model. Milestone 9 replaced it with the
+mechanics of the reference space-trading rules. This was a deliberate breaking migration:
+incompatible modules and tests were deleted rather than kept behind compatibility shims. See
+`docs/RULEBOOK_ALIGNMENT.md` for the full migration table.
 
 ## Verified completed work
 
+### Foundation (Milestone 1)
+
 - Vite + React 19 + TypeScript app scaffolded directly in the project root (no nested dir).
-- Runtime deps installed: zustand, pixi.js, zod, howler, idb.
-- Dev deps installed: TypeScript, Vite, ESLint, Prettier, Vitest, jsdom, React Testing
-  Library, jest-dom, user-event, Playwright, plus type packages.
-- Strict TypeScript enabled in `tsconfig.app.json` / `tsconfig.node.json`, all nine required
-  flags on. Path aliases (`@/`, `@app/`, `@game/`, `@components/`, `@assets/`) configured
-  identically in `tsconfig.app.json`, `vite.config.ts`, and `vitest.config.ts`.
-- Lean architecture folders created under `src/`; deeper gameplay-specific subfolders
-  intentionally deferred (documented in `docs/ARCHITECTURE.md`).
-- Application shell (`src/app/App.tsx`) renders title, subtitle, status panel (version,
-  milestone, status), and a "gameplay not yet implemented" notice — no fake gameplay
-  controls. Confirmed responsive with no horizontal overflow at 1366×768 and 1920×1080.
-- Styling foundation (`src/styles/tokens.css`, `src/styles/global.css`): CSS variables,
-  typography, spacing scale, radius, focus-visible ring, base button style,
-  `prefers-reduced-motion` handling.
-- Playwright installed (Chromium browser downloaded successfully) and configured to run
-  against the production preview build; smoke test passing, fails only on page errors or
-  console-error messages.
-- ESLint (flat config, ESLint 10) + Prettier + `.editorconfig` configured; `lint` and
-  `format:check` both passing.
-- Production build (`tsc -b && vite build`) passing.
-- Git initialized locally on `main`; no commit made yet (per explicit instruction — user
-  will review and commit manually).
-- **Pure domain model** under `src/game/domain/`:
-  - `types/resources.ts` — the five Starbound Frontier resources (`alloy`, `plasma`,
-    `cryonite`, `biofiber`, `quantumCore`), `ResourceInventory`,
-    `createEmptyResourceInventory`, `getTotalResourceCount`, `isValidResourceInventory`.
-  - `types/piece-supply.ts` — `PieceSupply` (15 trade routes / 5 outposts / 4 colonies / 2
-    nexus), `createInitialPieceSupply`, `isValidPieceSupply`.
-  - `types/ids.ts` — branded `PlayerId`, `CaptainId`, `FactionColorId`.
-  - `types/player-configuration.ts` — `PlayerControlType`, `AiDifficulty`
-    (`cadet`/`commander`/`admiral`), discriminated `PlayerControlConfiguration`
-    (`HumanPlayerConfiguration` | `AiPlayerConfiguration`).
-  - `types/result.ts` — shared `DomainValidationError` / `DomainResult<T>` convention.
-  - `types/player.ts` — `Player` type (identity, control config, resources, piece supply,
-    milestone IDs, trade/exploration counters, cached victory points) and the `createPlayer`
-    factory, which returns a `DomainResult<Player>` rather than throwing.
-  - `types/index.ts` and `domain/index.ts` — the public export surface.
-  - `domain-purity.test.ts` — architectural test asserting no file under
-    `src/game/domain/` imports React, React DOM, Zustand, PixiJS, Howler, or idb.
-  - No React/PixiJS/browser-API/storage/sound imports anywhere in this code. Not yet wired
-    into the UI (production bundle size is unchanged since nothing imports it yet — expected
-    for a domain-only milestone).
-  - This replaces an earlier, less-specified domain pass from this same milestone slot that
-    used generic placeholder resources (`energy`/`minerals`/`food`/`research`) and a minimal
-    `Player` shape — superseded once the precise game spec (exact resources, piece counts,
-    AI difficulties, full player fields) was provided.
-- **Board geometry** under `src/game/domain/board/`:
-  - `hex-coordinate.ts` — `HexCoordinate` (axial), `HexDirection` (clockwise from East),
-    `createHexCoordinate`/`isValidHexCoordinate`, `hexCoordinateKey`,
-    `hexCoordinatesEqual`, `getHexNeighbor`/`tryGetHexNeighbor`/`getHexNeighbors`,
-    `getOppositeHexDirection`, `getHexDistance`, `areHexesAdjacent`, `isHexDirection`.
-  - `lattice.ts` — the tripled cube lattice (`LatticePoint`, `CORNER_OFFSETS`,
-    `hexCentreLatticePoint`, add/subtract/equality, key/parse) that makes corner identity
-    exact integer arithmetic.
-  - `vertex.ts` — `VertexId`, `getHexVertices` (clockwise from North), `getVertexPoint`,
-    `vertexIdKey`, `areVerticesConnected`.
-  - `edge.ts` — `EdgeId`, `createEdgeId` (order-independent; rejects degenerate and
-    unconnected endpoints), `getHexEdges`, `getEdgeVertices`, `doEdgesShareVertex`,
-    `edgeHasVertex`, `edgeIdKey`.
-  - `index.ts` — public board barrel, re-exported from `src/game/domain/index.ts`.
-  - Structural tests confirm a radius-1 patch has exactly 24 corners / 30 edges and a
-    radius-2 patch exactly 54 / 72, with Euler's formula holding in both — i.e. no duplicate
-    or split identities.
-- **Board generation** under `src/game/domain/board/` and `src/game/domain/random/`:
-  - `random/seeded-random.ts` — pure mulberry32 `createSeededRandom` (unbiased `nextInt`,
-    non-mutating `shuffle`, `pick`) plus `deriveAttemptSeed`. No `Math.random()` anywhere.
-  - `board-shape.ts` — radius-3 hexagon (37 sectors), boundary detection, deterministic
-    coordinate ordering.
-  - `board-configuration.ts` — the single home for sector counts, production-token counts,
-    hidden-sector count, and the attempt limit.
-  - `sector.ts` / `production-number.ts` — sector vocabulary and producing/non-producing
-    split; production values 2-12 excluding 7, with `getProductionProbabilityWeight`.
-  - `board.ts` / `board-generation.ts` / `board-validation.ts` — serializable `Board`,
-    `generateBoard` with deterministic bounded retry, and `validateBoard` returning the
-    shared `DomainResult`.
-  - Measured across 200 seeds: zero failures, mean 1.015 attempts, worst case 3.
-- **Setup placement** under `src/game/domain/setup/`, plus supporting ownership types:
-  - `board/board-topology.ts` — `createBoardTopology` derives every corner (96) and edge
-    (132) of the standard board, plus corner→sectors and corner→edges indexes.
-  - `board/sector.ts` — added `getSectorResourceType`, mapping each producing sector type to
-    the resource it yields.
-  - `buildings/outpost.ts`, `routes/trade-route.ts` — minimal `Outpost` / `TradeRoute`
-    ownership records on canonical `VertexId` / `EdgeId`.
-  - `setup/setup-state.ts` — immutable `SetupState`, snake-order construction, accessors.
-  - `setup/setup-placement.ts` — legality checks, legal-move listings, `placeSetupOutpost` /
-    `placeSetupRoute`, and the second-outpost resource grant.
-  - Not wired into the UI (production bundle size unchanged, as expected for domain work).
-- **Match and turn state** under `src/game/domain/turns/`:
-  - `match-id.ts` — externally supplied `MatchId` (branded, not generated by the domain).
-  - `turn-phase.ts` — closed `TurnPhase` union: `startTurn`, `roll`, `resolveProduction`,
-    `crisisPending`, `trade`, `build`, `endTurn`.
-  - `resource-bank.ts` — immutable, serializable `ResourceBank` with one configurable initial
-    quantity per resource (default 19 — see `docs/DECISIONS.md`), `deductFromBank`, and
-    `bankHasAtLeast`.
-  - `match-events.ts` — minimal serializable events (`TurnStarted`, `DiceRolled`,
-    `SectorProduced`, `ResourcesGranted`, `ResourceShortage`, `ProductionResolved`,
-    `TurnEnded`), each with a deterministic `sequence` and no timestamps.
-  - `match.ts` — immutable `Match` state (board, players, turn order, active player, phase,
-    random state, last dice result, outposts/routes, bank, event log, status) plus read-only
-    accessors.
-  - `match-initialization.ts` — `createMatchFromCompletedSetup`: validates a finished
-    `SetupState`, applies setup resource grants, deducts 2 outposts + 2 trade routes per
-    player, and starts turn 1 with the first player, all without mutating its inputs.
-  - `dice.ts` — `rollTwoDice`, a pure function from a random-state seed to a two-dice result
-    and the next state, via the existing seeded random service (no `Math.random()`).
-  - `production.ts` — `getProductionDemand`/`getShortResources`: finds outposts adjacent (via
-    `BoardTopology`) to visible sectors matching the roll, aggregates demand per player and
-    per resource, only outposts produce.
-  - `turn-transitions.ts` — `beginTurn`, `rollDice`, `resolveProduction`,
-    `advanceToTradePhase`, `advanceToBuildPhase`, `endTurn`, enforcing active-player/phase
-    validation, a roll of 7 entering `crisisPending` with no production, all-or-nothing
-    resource shortages, and player-order wrap with turn-number increment.
-  - Not wired into the UI (production bundle size unchanged, as expected for domain work).
-- **Crisis system and Void Marauder** under `src/game/domain/turns/`:
-  - `crisis-state.ts` — discriminated `CrisisState` union (`discarding`, `movingMarauder`,
-    `selectingStealTarget`, `stealing`), fixed-at-start `CrisisDiscardRequirement[]`, and
-    `computeRequiredDiscardCount` (half of a total, rounded down).
-  - `match.ts` — added `marauderCoordinate: HexCoordinate` (always present) and
-    `crisisState?: CrisisState` (present only mid-crisis) to `Match`.
-  - `match-initialization.ts` — new matches start with the Marauder on the central star
-    (board origin) — see `docs/DECISIONS.md`.
-  - `match-events.ts` — added `CrisisStarted`, `ResourcesDiscarded`, `MarauderMoved`,
-    `ResourceStolen` (deliberately omits which resource was stolen), `CrisisCompleted`,
-    `ProductionBlockedByMarauder`; all serializable, deterministic `sequence`, no timestamps.
-  - `resource-bank.ts` — added `addToBank` (the inverse of `deductFromBank`), used to return
-    discarded resources to the bank.
-  - `production.ts` — `getProductionDemand` now also returns `blockedSectors`: otherwise-
-    matching sectors that produced nothing because the Marauder occupies them. Other matching
-    sectors are unaffected.
-  - `turn-transitions.ts` — `rollDice` calls `startCrisis` on a roll of 7 instead of leaving
-    `crisisPending` a dead end; `resolveProduction` emits `ProductionBlockedByMarauder` for
-    each blocked sector before its normal production events.
-  - `crisis-transitions.ts` — the milestone's public API: `startCrisis`,
-    `getRequiredDiscardCount`, `getPendingDiscardPlayers`, `submitCrisisDiscard`,
-    `getLegalMarauderDestinations`, `moveMarauder`, `getEligibleStealTargets`,
-    `stealCrisisResource`, `isCrisisComplete`, `completeCrisis`. Reuses `DomainResult`,
-    branded `PlayerId`, canonical `HexCoordinate`/sector lookups, match events, and the
-    existing seeded random service (`createSeededRandom` — no `Math.random()`). Theft
-    selection is a flat per-card-held weighted list drawn via `rng.pick`, so probability is
-    exactly proportional to cards held and fully reproducible from `Match.randomState`.
-  - Not wired into the UI (production bundle size unchanged, as expected for domain work).
-- **Construction** under `src/game/domain/turns/` and `src/game/domain/buildings/`:
-  - `buildings/structure.ts` — one discriminated `Structure` type (`outpost | colony |
-nexus`, each with `vertexId` + `ownerId`), `createStructure`, and
-    `getStructureProductionValue` (1 / 2 / 3). `Match.outposts` is renamed `Match.structures`
-    and now holds this type; `SetupState.outposts` is unrelated and unchanged (still the
-    minimal setup-only `Outpost`). `createMatchFromCompletedSetup` converts setup outposts
-    into `type: 'outpost'` structures.
-  - `turns/construction-config.ts` — every construction cost (Trade Route, Outpost, Colony
-    upgrade, Nexus upgrade) in one typed map, plus `canAffordCost`.
-  - `turns/construction.ts` — the milestone's public API: `getLegalTradeRouteEdges` /
-    `validateTradeRouteBuild` / `buildTradeRoute`, `getLegalOutpostVertices` /
-    `validateOutpostBuild` / `buildOutpost`, `validateColonyUpgrade` / `upgradeToColony`,
-    `validateNexusUpgrade` / `upgradeToNexus`, `canAffordBuild`, `getPlayerBankTradeRate`.
-    Legal only in the `build` phase, for the active player, with no unresolved crisis; does
-    not itself advance `Match.phase`, so a player may build repeatedly in one build phase.
-    Every action validates the full cost first, then atomically deducts it and returns it to
-    the bank (`ResourcesSpent`), and updates piece supply (`PieceSupplyChanged`) — Colony/Nexus
-    upgrades move a piece in both directions (consume the next tier, return the previous one).
-  - `turns/match-events.ts` — added `TradeRouteBuilt`, `OutpostBuilt`, `ColonyUpgraded`,
-    `NexusUpgraded`, `ResourcesSpent`, `PieceSupplyChanged`; `SectorProducedEvent.outpostCount`
-    renamed to `structureCount` (+ new `unitCount`) since Colonies/Nexus also produce.
-  - `turns/production.ts` — `getProductionDemand` now iterates `Match.structures` and grants
-    each structure's `getStructureProductionValue` in units, instead of a flat 1 per outpost.
-    Hidden-sector, non-producing-sector, Marauder-blocking, and bank-shortage behavior are
-    unchanged.
-  - `getPlayerBankTradeRate` is derived from owned structures, not stored on `Player` — a
-    Nexus owner gets 3:1 instead of 4:1. Bank-trading execution itself is out of scope.
-  - Not wired into the UI (production bundle size unchanged, as expected for domain work).
+- Strict TypeScript across the project, including `exactOptionalPropertyTypes` and
+  `noUncheckedIndexedAccess`.
+- Path aliases (`@/`, `@game/`, `@app/`, `@components/`, `@assets/`) working in TypeScript,
+  Vite, and Vitest.
+- ESLint + Prettier + EditorConfig configured; application shell renders with no fake gameplay
+  controls.
+
+### Domain model
+
+- Five resources with documented gameplay roles: `alloy`=ore, `plasma`=fuel, `cryonite`=carbon,
+  `biofiber`=food, `quantumCore`=goods. Serialized identifiers are unchanged, so no data
+  migration layer was required.
+- Branded ids, the `DomainResult<T>` validation convention, and immutable state throughout.
+- Player state: hidden resource hand, piece supply, Mothership, victory points, seat order.
+- Architectural purity test asserting the domain imports no React, Zustand, PixiJS, Howler, or
+  idb.
+
+### Board
+
+- Data-driven model: `Planet`, `PlanetarySystem`, `HomeColonySystem`, `AlienOutpost`,
+  `SpaceSector`, `Intersection`, `ColonySite`, `SpaceportSite`, `Dock`, `NumberDisc`.
+- Topology supplied through `BoardConfiguration` — never generated or inferred.
+- `validateSpaceBoard` checks mirrored adjacency, resolvable ids, and hazard/disc exclusivity;
+  `validateBoardComposition` checks the published counts (4 home systems, 8 planetary systems,
+  4 outposts, 15 sectors, 5 docks each).
+- Read-only flight-graph queries: adjacency, BFS distance, range, connectivity.
+
+### Pieces and structures
+
+- 9 Colonies, 7 Trade Stations, 3 Transport Ships, 3 Shipyards per player.
+- Composite semantics: Transport+Colony = Colony Ship, Transport+Trade Station = Trade Ship,
+  Colony+Shipyard = Spaceport.
+- Structures split by position: Colonies/Spaceports on intersections, Trade Stations on docks.
+  A Spaceport replaces its Colony, so a site is never counted twice.
+
+### Setup
+
+- Beginner setup: 2 Colonies, 1 Spaceport, 1 Colony Ship, 4 victory points, 3 hidden Reserve
+  cards, 1 Fame Medal piece, 1 Booster.
+- Starting player by highest two-die roll, ties broken by seat index.
+- Neutral blocking pieces for the unused colour in a 3-player game.
+- No starting production from adjacent planets.
+
+### Turns and production
+
+- Phases: `startTurn → roll → resolveProduction → tradeAndBuild → flight → endTurn`, with
+  `sevenPending` branching off the roll.
+- Trading and building share one phase and may be interleaved without limit.
+- Production grants exactly 1 resource per adjacent Colony **and** per adjacent Spaceport.
+- Unrevealed number discs and hazard-blocked planets never produce.
+- All-or-nothing per-resource shortage handling against the Supply.
+- Reserve entitlement for the active player only: 4–7 → 2 cards, 8–9 → 1, 10+ → 0.
+
+### Roll of 7
+
+- Discard half (rounded down) above 7 cards, fixed at the moment the 7 is rolled.
+- Direct weighted theft from any chosen opponent — no board token, no adjacency requirement.
+- One Reserve card to every opponent, starting from the active player's left.
+- Void Marauder removed entirely.
+
+### Trading and construction
+
+- Supply trade at 3:1, and 2:1 for `quantumCore` — derived from the resource role, not from any
+  owned structure.
+- Build costs: Spaceport (3 cryonite + 2 biofiber), Colony Ship (1 alloy + 1 plasma +
+  1 cryonite + 1 biofiber), Trade Ship (1 alloy + 1 plasma + 2 quantumCore), Cannon (2 cryonite,
+  max 6), Freight Pod (2 alloy, max 5), Booster (2 plasma, max 6).
+- Correct piece consumption on every build, including the Colony that stays inside a Spaceport.
+
+### Scoring
+
+- Colony 1, Spaceport 2 in total, Friendship Marker 2, cleared pirate base 1, terraformed ice
+  planet 1, each complete Fame Medal pair 1.
+- 15-point target, checked only for the active player on their own turn.
 
 ## Current blockers
 
-None. Global git identity (`user.name`/`user.email`) is not configured on this machine, but
-this is informational only since no commit was attempted:
+**The exact beginner board layout is unavailable.** The reference rules publish it as a
+diagram, not as coordinates, so the domain ships without a playable default board — a
+`BoardConfiguration` must be supplied externally. See `docs/RULEBOOK_GAPS.md` gaps 1 and 2.
 
-```bash
-git config --global user.name "Your Name"
-git config --global user.email "you@example.com"
-```
+This does not block further domain milestones, which proceed against configured fixtures, but
+it does block a playable build.
 
 ## Next milestone
 
-Milestone 9 — Trading. Player-to-player and bank trading do not exist yet; `trade` is
-currently a phase marker only. `getPlayerBankTradeRate` (Milestone 8) already exposes the 3:1
-vs. 4:1 rate this milestone will need.
+Milestone 10 — Supply and player trading: executable player-to-player offers and counteroffers,
+enforcing that only the active player finalizes a deal and that inactive players trade only
+with the active player.
 
 ## Last verification commands
 
-Run from the project root, all passing (most recently after Milestone 8):
+Run 2026-07-29, all passing:
 
-```bash
-npm run typecheck     # tsc -b — clean
-npm run lint          # eslint . — clean
-npm run test:run      # vitest run — 370/370 passed (25 files)
-npm run build         # tsc -b && vite build — succeeded
-```
+| Command                | Result                |
+| ---------------------- | --------------------- |
+| `npm run typecheck`    | Clean                 |
+| `npm run lint`         | Clean                 |
+| `npm run format:check` | Clean                 |
+| `npm run test:run`     | 207 passed (17 files) |
+| `npm run build`        | Clean                 |
 
-`npm run format:check` passes cleanly as of Milestone 8 (the files it previously flagged were
-re-formatted in the course of this milestone's edits). `npm run test:coverage` was not re-run
-this milestone; the plain `test:run` suite (370/370) was used for verification instead.
-
-`npm run test:e2e` was **not** re-run for Milestones 2–8 — no application/UI behavior
-changed (the domain layer is not wired into the app yet), so no new end-to-end verification
-was needed. It was last run and passed (1/1) during Milestone 1, against the production
-preview build.
-
-Dev server (`npm run dev`) started and verified in-browser during Milestone 1: page text,
-console messages (info/debug only, no errors), and viewport checks at 1366×768 and
-1920×1080 (no horizontal overflow) all confirmed.
+Playwright end-to-end tests were not run in this session; the application shell is unchanged by
+this refactor.

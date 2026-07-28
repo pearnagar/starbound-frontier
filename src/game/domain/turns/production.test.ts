@@ -1,234 +1,138 @@
 import { describe, expect, it } from 'vitest'
-import { createStructure } from '../buildings/structure'
-import { createResourceBank } from './resource-bank'
-import { getProductionDemand, getShortResources } from './production'
-import { allVisible, baseBoard, getHexVertices, p1, p2, withSectors } from './test-fixtures'
+import { asIntersectionId } from '../board/space-board'
+import { createColony, createSpaceport } from '../buildings/structure'
+import { getStructureProductionValue } from '../buildings/structure'
 import type { Match } from './match'
-import { asMatchId } from './match-id'
+import { getPlayerGrant, getProductionDemand } from './production'
+import { createTestMatch, makePlayerId } from './test-fixtures'
 
-const player1 = p1
-const player2 = p2
-
-/** Builds a minimal match around a given board and structures, for production-only tests. */
-function matchFor(board: ReturnType<typeof allVisible>, structures: Match['structures']): Match {
-  return {
-    matchId: asMatchId('m'),
-    board,
-    playersById: {},
-    playerOrder: [player1, player2],
-    activePlayerId: player1,
-    activePlayerIndex: 0,
-    turnNumber: 1,
-    phase: 'resolveProduction',
-    randomState: 1,
-    structures,
-    routes: {},
-    bank: createResourceBank(),
-    // Off in a corner, away from the sectors these tests override at/near the
-    // origin, so the Marauder never incidentally blocks unrelated assertions.
-    marauderCoordinate: { q: 3, r: -3 },
-    events: [],
-    eventSequence: 0,
-    status: 'inProgress',
-  }
+/**
+ * The fixture board gives seat 0 a Colony on `i-colony-a` (bordering the ore
+ * planet on 5 and the carbon planet on 6) and `i-colony-b` (carbon on 6, food
+ * on 8), with a Spaceport on `i-colony-c` (food on 8, and a face-down 9).
+ */
+function baseMatch(): Match {
+  return createTestMatch()
 }
 
-describe('getProductionDemand', () => {
-  it('matching visible producing sectors grant one resource per adjacent outpost', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
-    const match = matchFor(board, outposts)
-
-    const demand = getProductionDemand(match, 8)
-    expect(demand.totalDemand.alloy).toBe(1)
-    expect(demand.grantsByPlayer[player1]?.alloy).toBe(1)
-  })
-
-  it('hidden sectors do not produce', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8, visibility: 'hidden' },
-    })
-    const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
-    const match = matchFor(board, outposts)
-
-    const demand = getProductionDemand(match, 8)
-    expect(demand.totalDemand.alloy).toBe(0)
-    expect(demand.grantsByPlayer[player1]).toBeUndefined()
-  })
-
-  it('non-matching production numbers do not produce', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
-    const match = matchFor(board, outposts)
-
+describe('planet production', () => {
+  it('grants exactly 1 resource per adjacent Colony', () => {
+    const match = baseMatch()
     const demand = getProductionDemand(match, 5)
-    expect(demand.totalDemand.alloy).toBe(0)
+    // Only i-colony-a borders the ore planet on 5.
+    expect(getPlayerGrant(demand, makePlayerId(0)).alloy).toBe(1)
   })
 
-  it('empty space, anomaly, and the central star never produce', () => {
-    // Isolate the corner: every sector touching it is overridden so only the
-    // type under test can possibly explain any non-zero demand.
-    const nonProducingTypes = ['centralStar', 'emptySpace', 'anomaly'] as const
-    const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
-
-    for (const type of nonProducingTypes) {
-      const board = withSectors(allVisible(baseBoard()), {
-        '0,0': { type },
-        '0,-1': { type: 'emptySpace' },
-        '1,-1': { type: 'anomaly' },
-      })
-      const match = matchFor(board, outposts)
-      for (let total = 2; total <= 12; total += 1) {
-        const demand = getProductionDemand(match, total)
-        expect(Object.values(demand.totalDemand).every((n) => n === 0)).toBe(true)
-      }
-    }
-  })
-
-  it('a corner with no outpost yields nothing even if the sector matches', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    const match = matchFor(board, {})
+  it('grants exactly 1 resource to a Spaceport, never 2 or 3', () => {
+    const match = baseMatch()
+    // i-colony-c holds seat 0's Spaceport and borders the food planet on 8.
     const demand = getProductionDemand(match, 8)
-    expect(demand.totalDemand.alloy).toBe(0)
+    const grant = getPlayerGrant(demand, makePlayerId(0))
+    // i-colony-b (Colony) and i-colony-c (Spaceport) both border food on 8.
+    expect(grant.biofiber).toBe(2)
+
+    const spaceportOnly: Match = {
+      ...match,
+      structures: {
+        [asIntersectionId('i-colony-c')]: createSpaceport(
+          asIntersectionId('i-colony-c'),
+          makePlayerId(0),
+        ),
+      },
+    }
+    expect(getPlayerGrant(getProductionDemand(spaceportOnly, 8), makePlayerId(0)).biofiber).toBe(1)
   })
 
-  it('multiple sectors and players aggregate correctly', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-      '0,-1': { type: 'plasmaNebula', productionNumber: 8 },
-    })
-    // Corner touching both (0,0) and (0,-1): find it via shared north vertex overlap.
-    const cornersOfOrigin = getHexVertices({ q: 0, r: 0 })
-    const cornersOfNeighbour = getHexVertices({ q: 0, r: -1 })
-    const shared = cornersOfOrigin.find((v) => cornersOfNeighbour.includes(v))
-    expect(shared).toBeDefined()
-    if (shared === undefined) return
+  it('gives a Colony and a Spaceport the same single card', () => {
+    expect(getStructureProductionValue('colony')).toBe(1)
+    expect(getStructureProductionValue('spaceport')).toBe(1)
+  })
 
-    const [originOnlyVertex] = cornersOfOrigin.filter((v) => v !== shared)
-    expect(originOnlyVertex).toBeDefined()
-    if (originOnlyVertex === undefined) return
+  it('gives Trade Stations no planetary production', () => {
+    expect(getStructureProductionValue('tradeStation')).toBe(0)
+  })
 
-    const outposts = {
-      [shared]: createStructure('outpost', shared, player1),
-      [originOnlyVertex]: createStructure('outpost', originOnlyVertex, player2),
+  it('produces for every adjacent structure when a shared planet is rolled', () => {
+    const match = baseMatch()
+    // The carbon planet on 6 borders both i-colony-a and i-colony-b.
+    const demand = getProductionDemand(match, 6)
+    expect(getPlayerGrant(demand, makePlayerId(0)).cryonite).toBe(2)
+    expect(demand.producingPlanets).toHaveLength(1)
+    expect(demand.producingPlanets[0]?.structureCount).toBe(2)
+  })
+
+  it('produces nothing from an unrevealed number disc', () => {
+    const match = baseMatch()
+    // planet-hidden carries a 9 that is face down.
+    const demand = getProductionDemand(match, 9)
+    expect(demand.producingPlanets).toHaveLength(0)
+    expect(getPlayerGrant(demand, makePlayerId(0)).plasma).toBe(0)
+  })
+
+  it('produces nothing for a number no revealed planet carries', () => {
+    const demand = getProductionDemand(baseMatch(), 12)
+    expect(demand.producingPlanets).toHaveLength(0)
+  })
+
+  it('produces nothing from a planet blocked by a hazard', () => {
+    const match = baseMatch()
+    const blocked: Match = {
+      ...match,
+      board: {
+        ...match.board,
+        planets: {
+          ...match.board.planets,
+          'planet-ore': {
+            id: match.board.planets['planet-ore']!.id,
+            systemId: match.board.planets['planet-ore']!.systemId,
+            resource: match.board.planets['planet-ore']!.resource,
+            hazard: { kind: 'pirateBase', strength: 3 },
+          },
+        },
+      },
     }
-    const match = matchFor(board, outposts)
-    const demand = getProductionDemand(match, 8)
+    expect(getProductionDemand(blocked, 5).producingPlanets).toHaveLength(0)
+  })
 
-    // player1's outpost touches both alloy and plasma sectors (2 grants);
-    // player2's outpost touches only the alloy sector (1 grant).
-    expect(demand.totalDemand.alloy).toBe(2)
-    expect(demand.totalDemand.plasma).toBe(1)
-    expect(demand.grantsByPlayer[player1]?.alloy).toBe(1)
-    expect(demand.grantsByPlayer[player1]?.plasma).toBe(1)
-    expect(demand.grantsByPlayer[player2]?.alloy).toBe(1)
+  it('produces nothing for a player with no adjacent structure', () => {
+    const match = baseMatch()
+    const demand = getProductionDemand(match, 5)
+    expect(getPlayerGrant(demand, makePlayerId(1)).alloy).toBe(0)
+  })
+
+  it('has no Marauder blocking concept', () => {
+    const demand = getProductionDemand(baseMatch(), 5)
+    expect(demand).not.toHaveProperty('blockedSectors')
   })
 })
 
-describe('getShortResources', () => {
-  it('flags a resource whose demand exceeds the bank supply', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
-    const match = matchFor(board, outposts)
-    const demand = getProductionDemand(match, 8)
-
-    const short = getShortResources(demand, {
-      alloy: 0,
-      plasma: 19,
-      cryonite: 19,
-      biofiber: 19,
-      quantumCore: 19,
-    })
-    expect(short).toEqual(['alloy'])
-  })
-
-  it('does not flag a resource the bank can cover', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
-    const match = matchFor(board, outposts)
-    const demand = getProductionDemand(match, 8)
-
-    const short = getShortResources(demand, {
-      alloy: 19,
-      plasma: 19,
-      cryonite: 19,
-      biofiber: 19,
-      quantumCore: 19,
-    })
-    expect(short).toEqual([])
-  })
-})
-
-describe('Void Marauder blocking', () => {
-  it('a sector occupied by the Marauder produces nothing', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
-    const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
-
-    const demand = getProductionDemand(match, 8)
-    expect(demand.totalDemand.alloy).toBe(0)
-    expect(demand.grantsByPlayer[player1]).toBeUndefined()
-    expect(demand.blockedSectors).toHaveLength(1)
-    expect(demand.blockedSectors[0]?.coordinate).toEqual({ q: 0, r: 0 })
-  })
-
-  it('other matching sectors resolve normally while the Marauder blocks only its own sector', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-      '0,-1': { type: 'plasmaNebula', productionNumber: 8 },
-    })
-    // Isolate corners so each player's outpost touches only one of the two
-    // sectors under test, keeping the origin (blocked) and neighbour
-    // (unblocked) contributions cleanly separable.
-    const cornersOfOrigin = getHexVertices({ q: 0, r: 0 })
-    const cornersOfNeighbour = getHexVertices({ q: 0, r: -1 })
-    const [originOnlyVertex] = cornersOfOrigin.filter((v) => !cornersOfNeighbour.includes(v))
-    const [neighbourOnlyVertex] = cornersOfNeighbour.filter((v) => !cornersOfOrigin.includes(v))
-    expect(originOnlyVertex).toBeDefined()
-    expect(neighbourOnlyVertex).toBeDefined()
-    if (originOnlyVertex === undefined || neighbourOnlyVertex === undefined) return
-
-    const outposts = {
-      [originOnlyVertex]: createStructure('outpost', originOnlyVertex, player1),
-      [neighbourOnlyVertex]: createStructure('outpost', neighbourOnlyVertex, player2),
+describe('production demand shape', () => {
+  it('aggregates total demand across players', () => {
+    const match = baseMatch()
+    // i-colony-a borders the ore planet on 5; hand it to another player so two
+    // seats draw from the same planet.
+    const other = createColony(asIntersectionId('i-colony-a'), makePlayerId(1))
+    const shared: Match = {
+      ...match,
+      structures: {
+        ...match.structures,
+        [asIntersectionId('i-colony-b')]: createColony(
+          asIntersectionId('i-colony-b'),
+          makePlayerId(0),
+        ),
+        [other.intersectionId]: other,
+      },
     }
-    const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
-
-    const demand = getProductionDemand(match, 8)
-    expect(demand.totalDemand.alloy).toBe(0)
-    expect(demand.totalDemand.plasma).toBe(1)
-    expect(demand.grantsByPlayer[player2]?.plasma).toBe(1)
-    expect(demand.blockedSectors.map((s) => s.coordinate)).toEqual([{ q: 0, r: 0 }])
+    const demand = getProductionDemand(shared, 6)
+    expect(demand.totalDemand.cryonite).toBe(2)
+    expect(getPlayerGrant(demand, makePlayerId(0)).cryonite).toBe(1)
+    expect(getPlayerGrant(demand, makePlayerId(1)).cryonite).toBe(1)
   })
 
-  it('a Marauder sector that does not match the roll is not reported as blocked', () => {
-    const board = withSectors(allVisible(baseBoard()), {
-      '0,0': { type: 'alloyAsteroidField', productionNumber: 8 },
-    })
-    const [vertexId] = getHexVertices({ q: 0, r: 0 })
-    const outposts = { [vertexId]: createStructure('outpost', vertexId, player1) }
-    const match = { ...matchFor(board, outposts), marauderCoordinate: { q: 0, r: 0 } }
-
-    const demand = getProductionDemand(match, 5)
-    expect(demand.blockedSectors).toEqual([])
+  it('does not mutate the match', () => {
+    const match = baseMatch()
+    const snapshot = JSON.parse(JSON.stringify(match)) as unknown
+    getProductionDemand(match, 6)
+    expect(JSON.parse(JSON.stringify(match)) as unknown).toEqual(snapshot)
   })
 })

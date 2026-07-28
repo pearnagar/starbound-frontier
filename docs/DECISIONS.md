@@ -79,7 +79,9 @@ discriminated union makes this a compile-time requirement, not just a convention
 domain factories that can fail validation should reuse the same `DomainResult` shape for
 consistency, rather than mixing throw-based and result-based error handling.
 
-## 2026-07-28 — `cachedVictoryPoints` is explicitly a cache, not authoritative state
+## 2026-07-28 — Superseded: `cachedVictoryPoints` is explicitly a cache, not authoritative state
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** The `Player` type needs some victory-point field even though scoring rules
 don't exist yet (Milestone 11, "Scoring and victory"). Naming it ambiguously (e.g.
@@ -114,7 +116,9 @@ control configuration, piece supply, milestones, counters, cached score).
 resource spending/production logic is out of scope for this milestone and was removed along
 with the placeholder resource set it was built on.
 
-## 2026-07-28 — Tripled cube lattice for canonical corner and edge identity
+## 2026-07-28 — Superseded: tripled cube lattice for canonical corner and edge identity
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** A board corner is shared by up to three hexes and an edge by up to two.
 Identifying a corner as `{ hex, cornerIndex }` would let each touching hex mint a different
@@ -156,7 +160,9 @@ external part: obtaining a fresh seed at application start and persisting it.
 violation. The `CLAUDE.md` rule still holds in spirit — `Math.random()` is never called in
 domain logic — but the seeded service's location differs from the original wording.
 
-## 2026-07-28 — High production tokens placed constructively, not by rejection
+## 2026-07-28 — Superseded: high production tokens placed constructively, not by rejection
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** The board must avoid adjacent 6/8 sectors. The obvious implementation is to
 shuffle all 27 tokens and retry until validation passes. Measured on the standard board, a
@@ -174,7 +180,9 @@ across 200 seeds: zero failures, mean 1.015 attempts, worst case 3). The generat
 validator remain independent — the validator re-derives the adjacency check from scratch
 rather than trusting the generator.
 
-## 2026-07-28 — The central star is marked by its sector type, not a separate flag
+## 2026-07-28 — Superseded: the central star is marked by its sector type, not a separate flag
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** The board model called for a "central-star marker". A boolean field alongside
 `type: 'centralStar'` would encode the same fact twice and could drift out of sync.
@@ -186,7 +194,9 @@ positioned at the origin and always visible.
 **Consequences:** No duplicated derived state in serialized board data. Consumers must call
 the helper (or compare the type) rather than reading a flag.
 
-## 2026-07-28 — `BoardTopology` as a derived index, not stored board state
+## 2026-07-28 — Superseded: `BoardTopology` as a derived index, not stored board state
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** Setup placement repeatedly asks which corners and edges exist, which corners
 neighbour a corner, and which sectors touch a corner. Recomputing that from the 37 sectors
@@ -201,7 +211,9 @@ derived view passed alongside it into placement functions.
 it. Callers must build the topology once per board and thread it through — placement
 functions take `(state, topology, ...)` rather than `(state, board, ...)`.
 
-## 2026-07-28 — Setup grants resources as a returned delta, not by mutating players
+## 2026-07-28 — Superseded: setup grants resources as a returned delta, not by mutating players
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** Completing a second setup pair awards starting resources. The setup module
 could have taken the player list and returned updated `Player` objects.
@@ -228,7 +240,9 @@ phase → active player → target legality.
 errors. The result shape stays consistent with the rest of the domain, so no second error
 convention was introduced.
 
-## 2026-07-29 — Default resource bank quantity: 19 per resource
+## 2026-07-29 — Superseded: default resource bank quantity: 19 per resource
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** Milestone 6 requires a finite, configurable resource bank, but the game
 specification available to this milestone does not state an exact starting quantity per
@@ -245,7 +259,9 @@ both the default and explicitly small quantities. If the eventual full specifica
 for a different number, only the default value needs to change — callers that already pass
 their own quantity are unaffected.
 
-## 2026-07-29 — Void Marauder starts on the central star
+## 2026-07-29 — Superseded: Void Marauder starts on the central star
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** Milestone 7 needs an explicit starting sector for the Void Marauder, and the
 match model previously had no Marauder location at all.
@@ -259,7 +275,9 @@ added since the origin is already the board's one fixed, unambiguous landmark.
 never itself produces (it isn't a producing sector type), so this has no production-blocking
 effect until the Marauder is moved for the first time.
 
-## 2026-07-29 — A single eligible steal target is auto-selected, not chosen
+## 2026-07-29 — Superseded: a single eligible steal target is auto-selected, not chosen
+
+**Superseded 2026-07-29 by the rulebook alignment refactor** — see `docs/RULEBOOK_ALIGNMENT.md`.
 
 **Context:** After the Marauder moves, "exactly one eligible target" is a case the spec
 explicitly allows either resolving automatically or requiring explicit selection, as long as
@@ -275,3 +293,81 @@ This keeps `stealCrisisResource`'s validation uniform (it always checks `targetI
 **Consequences:** Callers with exactly one eligible target must still pass that id explicitly;
 the domain never silently picks it on their behalf. Any "auto-confirm" UX is a presentation
 concern layered on top of `getEligibleStealTargets`, not a domain-level shortcut.
+
+## 2026-07-29 — Rulebook alignment: mechanics replaced rather than shimmed
+
+**Context.** Milestones 1-8 implemented a plausible but incorrect rules model (resource hexes,
+route networks, Outpost/Colony/Nexus tiers, a roaming blocker piece). The reference rules
+differ structurally, not cosmetically.
+
+**Decision.** Delete the incompatible modules and tests outright rather than keeping
+compatibility aliases or alternative default rules.
+
+**Rationale.** A compatibility layer would have preserved two contradictory rule sets in one
+codebase, and the obsolete tests would have kept passing while asserting the wrong game. The
+seeded RNG, `DomainResult` convention, branded ids, immutability discipline, and centralized
+cost configuration were all correct and survive unchanged.
+
+**Consequences.** Board geometry, generation, setup placement, routes, and crisis modules were
+removed. See `docs/RULEBOOK_ALIGNMENT.md` for the full migration table.
+
+## 2026-07-29 — Board topology is configuration, not generated content
+
+**Context.** The reference beginner layout is published only as a diagram. No coordinate list,
+adjacency table, or intersection numbering exists in the text.
+
+**Decision.** Model the board as pure data supplied through `BoardConfiguration`, validated for
+internal consistency but never generated or inferred.
+
+**Rationale.** Generating a layout would have meant inventing rules content and then presenting
+it as authoritative. Making it configuration keeps the fabrication out of the codebase and
+isolates the gap to a documented input (`docs/RULEBOOK_GAPS.md` gaps 1-2).
+
+**Consequences.** `createBeginnerMatch` fails with `MISSING_STARTING_PLACEMENT` rather than
+placing a seat somewhere plausible. Tests use a deliberately small fixture board that exercises
+the rules without pretending to reproduce the physical one.
+
+## 2026-07-29 — Supply and Reserve are separate types
+
+**Context.** The rules distinguish a face-up Supply from a face-down Reserve pile. The previous
+model had one `ResourceBank`.
+
+**Decision.** `ResourceSupply` holds per-resource counts; `ReservePile` holds an ordered card
+list.
+
+**Rationale.** A count-based store cannot represent "the next card", which the Reserve pile
+requires. Keeping one type would have forced either a fake ordering or a hidden-information
+leak. The split also makes the hidden/visible distinction explicit at the type level.
+
+**Consequences.** Reserve draws return an explicit `ReserveDrawResult` carrying the next random
+state, and events record only a drawn _count_.
+
+## 2026-07-29 — A steal target holding no cards is rejected
+
+**Context.** The rules say the active player chooses another player and draws a random card.
+They do not say what happens when the chosen player holds nothing.
+
+**Decision.** Exclude empty-handed opponents from `eligibleTargetIds` and reject them with
+`INVALID_TARGET`. Provide `skipSteal` for when no opponent holds a card.
+
+**Rationale.** The alternatives — a silent no-op, or a successful steal of nothing — would both
+report success for an action that did not happen. This replaces the earlier auto-selection
+decision, which assumed adjacency-limited targeting that no longer exists.
+
+**Consequences.** Callers must handle a legitimately empty target list. Recorded as a
+prompt-derived decision in `docs/RULEBOOK_ALIGNMENT.md`, not a rulebook rule.
+
+## 2026-07-29 — Victory points are stored _and_ recomputable
+
+**Context.** Scoring can be derived from board state, but Friendship Marker transfers move
+points between players based on the physical victory-point track.
+
+**Decision.** Keep `Player.victoryPoints` as stored state starting at 4, and provide
+`getVictoryPointBreakdown` to recompute from structures plus explicitly passed awards.
+
+**Rationale.** Pure derivation cannot express a marker that moves between players, and pure
+storage drifts from the board. Awards that no implemented system grants yet are a required
+argument defaulting to zero, so scoring never silently invents a source.
+
+**Consequences.** The two can disagree until the Friendship Marker milestone lands; the stored
+value is what `endTurn` checks against the 15-point target.

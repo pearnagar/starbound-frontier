@@ -1,106 +1,71 @@
 export {
-  areHexesAdjacent,
-  createHexCoordinate,
-  getHexDistance,
-  getHexNeighbor,
-  getHexNeighbors,
-  getOppositeHexDirection,
-  HEX_DIRECTIONS,
-  hexCoordinateKey,
-  hexCoordinatesEqual,
-  isHexDirection,
-  isValidHexCoordinate,
-  tryGetHexNeighbor,
-  type HexCoordinate,
-  type HexDirection,
-  type HexNeighbors,
-} from './hex-coordinate'
+  asDockId,
+  asIntersectionId,
+  asOutpostId,
+  asPlanetId,
+  asSectorId,
+  asSystemId,
+  getColonySiteAt,
+  getIntersection,
+  getOutpost,
+  getPlanet,
+  getPlanetsForColonySite,
+  getSystem,
+  isHomeColonySystem,
+  isPlanetarySystem,
+  isPlanetProducing,
+  isPlanetProductionNumber,
+  listColonySites,
+  listIntersections,
+  listOutposts,
+  listPlanets,
+  listSectors,
+  listSpaceportSites,
+  listSystems,
+  planetMatchesRoll,
+  PLANET_PRODUCTION_NUMBERS,
+  type AlienOutpost,
+  type ColonySite,
+  type Dock,
+  type DockId,
+  type HomeColonySystem,
+  type Intersection,
+  type IntersectionId,
+  type IntersectionKind,
+  type NumberDisc,
+  type OutpostId,
+  type Planet,
+  type PlanetarySystem,
+  type PlanetHazard,
+  type PlanetId,
+  type PlanetProductionNumber,
+  type SectorId,
+  type SpaceBoard,
+  type SpaceSector,
+  type SpaceportSite,
+  type StarSystem,
+  type SystemId,
+} from './space-board'
 
 export {
-  addLatticePoints,
-  CORNER_OFFSETS,
-  hexCentreLatticePoint,
-  latticePointKey,
-  latticePointsEqual,
-  parseLatticePointKey,
-  subtractLatticePoints,
-  type LatticePoint,
-} from './lattice'
-
-export {
-  areVerticesConnected,
-  getHexVertices,
-  getVertexPoint,
-  latticePointToVertexId,
-  vertexIdKey,
-  type HexVertices,
-  type VertexId,
-} from './vertex'
-
-export {
-  createEdgeId,
-  doEdgesShareVertex,
-  edgeHasVertex,
-  edgeIdKey,
-  getEdgeVertices,
-  getHexEdges,
-  type EdgeId,
-  type HexEdges,
-} from './edge'
-
-export {
-  BOARD_ORIGIN,
-  createBoardCoordinates,
-  createStandardBoardCoordinates,
-  getBoardBoundaryCoordinates,
-  getHexBoardSize,
-  isBoardBoundaryCoordinate,
-  STANDARD_BOARD_RADIUS,
-} from './board-shape'
-
-export {
-  BASIC_PRODUCING_SECTOR_TYPES,
-  getSectorResourceType,
-  isCentralStarSector,
-  isProducingSectorType,
-  isSectorHidden,
-  PRODUCING_SECTOR_TYPES,
-  SECTOR_TYPES,
-  type ProducingSectorType,
-  type Sector,
-  type SectorType,
-  type SectorVisibility,
-} from './sector'
-
-export {
-  createBoardTopology,
-  getAdjacentBoardVertexIds,
-  getBoardEdgeIdsTouchingVertex,
-  getSectorsAdjacentToVertex,
-  isBoardEdge,
-  isBoardVertex,
-  type BoardTopology,
-} from './board-topology'
-
-export {
-  getProductionProbabilityWeight,
-  HIGH_PRODUCTION_NUMBERS,
-  isHighProductionNumber,
-  isProductionNumber,
-  PRODUCTION_NUMBERS,
-  type ProductionNumber,
-} from './production-number'
-
-export {
-  createStandardBoardConfiguration,
-  getConfiguredBoardSize,
-  getConfiguredProductionTokenTotal,
-  getConfiguredSectorTotal,
+  EXPECTED_BOARD_COMPOSITION,
+  getNeutralBlockedIntersections,
+  getNeutralBlocking,
+  getStartingPlacement,
+  NEUTRAL_OWNER_ID,
+  toIntersectionIds,
+  validateBoardComposition,
+  validateBoardConfiguration,
+  validateSpaceBoard,
+  type BeginnerStartingPlacement,
   type BoardConfiguration,
+  type NeutralBlockingPlacement,
 } from './board-configuration'
 
-export { getBoardSize, getSector, listSectors, type Board } from './board'
-
-export { generateBoard } from './board-generation'
-
-export { validateBoard } from './board-validation'
+export {
+  areIntersectionsAdjacent,
+  getAdjacentIntersectionIds,
+  getIntersectionDistance,
+  getIntersectionsWithinRange,
+  isGraphConnected,
+} from './flight-graph'

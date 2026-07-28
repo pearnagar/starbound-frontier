@@ -1,4 +1,6 @@
+import { STARTING_VICTORY_POINTS } from '../rules/rules-config'
 import type { CaptainId, FactionColorId, PlayerId } from './ids'
+import { createInitialMothershipState, type MothershipState } from './mothership'
 import {
   isValidPlayerControlConfiguration,
   type PlayerControlConfiguration,
@@ -15,22 +17,21 @@ export interface Player {
   readonly captainId: CaptainId
   readonly factionColorId: FactionColorId
   readonly control: PlayerControlConfiguration
-  /** Authoritative domain state — current resource holdings. */
+  /** Authoritative domain state — current resource holdings (hidden from others). */
   readonly resources: ResourceInventory
   /** Authoritative domain state — pieces not yet placed on the board. */
   readonly pieceSupply: PieceSupply
-  /** Authoritative domain state — milestone identifiers already earned. */
-  readonly earnedMilestoneIds: readonly string[]
+  /** Authoritative domain state — upgrades and Fame Medal pieces. */
+  readonly mothership: MothershipState
+  /**
+   * Position on the victory-point track. Players begin at 4 for their two
+   * starting Colonies and one Spaceport. Scoring recomputes this from board
+   * state and tokens (see `domain/scoring`); it is stored because the physical
+   * track is itself authoritative for Friendship Marker transfers.
+   */
+  readonly victoryPoints: number
   /** Authoritative counter — completed player-to-player trades. */
   readonly tradeCount: number
-  /** Authoritative counter — sectors this player has explored. */
-  readonly exploredSectorCount: number
-  /**
-   * Cached victory-point total — NOT authoritative. Must be recomputed by the
-   * scoring system introduced in a later milestone (see "Scoring and
-   * victory" in docs/IMPLEMENTATION_PLAN.md). Starts at 0.
-   */
-  readonly cachedVictoryPoints: number
 }
 
 export interface CreatePlayerInput {
@@ -85,10 +86,9 @@ export function createPlayer(input: CreatePlayerInput): DomainResult<Player> {
       control: input.control,
       resources: createEmptyResourceInventory(),
       pieceSupply: createInitialPieceSupply(),
-      earnedMilestoneIds: [],
+      mothership: createInitialMothershipState(),
+      victoryPoints: STARTING_VICTORY_POINTS,
       tradeCount: 0,
-      exploredSectorCount: 0,
-      cachedVictoryPoints: 0,
     },
   }
 }
