@@ -371,3 +371,78 @@ argument defaulting to zero, so scoring never silently invents a source.
 
 **Consequences.** The two can disagree until the Friendship Marker milestone lands; the stored
 value is what `endTurn` checks against the 15-point target.
+
+## 2026-07-29 — Ship an original default board rather than wait for an untranscribable one
+
+**Context:** The board topology was made pure configuration precisely because the reference
+beginner layout is published only as a picture (`docs/RULEBOOK_GAPS.md` gaps 1-2). That was the
+right call for _fidelity_, but it left the project with no playable board at all: every match
+required an externally supplied `BoardConfiguration`, which nothing produced.
+
+**Decision:** Design an **original** layout — `createDefaultBoardConfiguration()` — that
+satisfies the rule model already implemented (4 home systems, 8 explorable systems, 4 outposts,
+15 sectors, 3 planets and 3 colony sites per system, 5 docks per outpost) without reproducing
+any published arrangement. Gaps 1 and 2 stay open as unresolved _reference_ questions, but stop
+being blockers.
+
+**Rationale:** The two failure modes are guessing at the reference layout and presenting it as
+authoritative, or shipping a domain that cannot start a game. An original board avoids both: it
+fabricates nothing about the reference rules, because it does not claim to be them. Should a
+transcription ever arrive it can be added as a second configuration — the original default does
+not have to be retracted, because it was never presented as a reconstruction.
+
+**Consequences:** `createBeginnerMatch` can now be called with no configuration. The layout is
+a design artifact with its own balance obligations, so it carries balance tests (equal
+production odds, equal outpost and planetary-system distance, equal departure counts) that a
+transcribed board would not have needed.
+
+## 2026-07-29 — An invalid supplied board fails; only an omitted one defaults
+
+**Context:** With a default board available, `createBeginnerMatch` could plausibly treat any
+unusable `BoardConfiguration` as a reason to fall back to the default.
+
+**Decision:** Fall back **only** when `configuration` is omitted. A supplied configuration is
+validated and either used as-is or rejected.
+
+**Rationale:** Silently substituting a different board would hand a caller a different game than
+the one they asked for, and report success while doing it — the same class of misleading-success
+problem the project rejects elsewhere. Failing loudly makes the caller's mistake visible.
+
+**Consequences:** Callers passing a custom layout must handle a validation failure. The
+optionality of `configuration` is a genuine "use the default" signal rather than a
+best-effort hint.
+
+## 2026-07-29 — Layout data, assembly, and validation live in three separate modules
+
+**Context:** The default board could have been one module that builds and checks itself.
+
+**Decision:** Split it three ways. `default-board-layout.ts` is pure data; `default-board.ts`
+assembles a `BoardConfiguration` and validates nothing;
+`validatePlayableBoardConfiguration` in `board-configuration.ts` re-derives every invariant
+from the finished board without consulting the layout module.
+
+**Rationale:** A builder that validates as it builds tends to enforce invariants by
+construction and then "verify" them by restating its own assumptions. Keeping the checker
+ignorant of the layout means the default board is tested by the same code path, and to the same
+standard, as any board a caller supplies.
+
+**Consequences:** A layout error surfaces as a named validation failure rather than a
+malformed board. The assembler drops duplicate and self-referencing links while building, but
+the validator independently rejects them too, so the deduplication cannot hide a bad layout.
+
+## 2026-07-29 — Board layout coordinates are integer and non-authoritative
+
+**Context:** The layout needs _some_ notion of position to be readable and to give a future
+renderer a starting arrangement.
+
+**Decision:** Use integer logical grid coordinates, and derive nothing from them. Adjacency is
+an explicit link list, exactly as it is for an externally supplied board.
+
+**Rationale:** This is the same hazard the deleted hex-lattice geometry was designed around:
+positions used as identity mean floating-point comparison and duplicate nodes. Integer
+coordinates that no rule reads cannot drift out of agreement with the graph, because nothing
+consults them.
+
+**Consequences:** Moving a system on the grid is a purely cosmetic change; changing the link
+list is the only way to change the game. The renderer will need to derive pixel positions from
+these coordinates, never the reverse.

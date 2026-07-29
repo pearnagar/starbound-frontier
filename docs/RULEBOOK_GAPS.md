@@ -9,7 +9,7 @@ resolved detail into the relevant design document.
 
 ## 1. Exact beginner-board coordinate topology
 
-**Status: blocking a playable default board.**
+**Status: unresolved, but no longer blocking. Worked around by an original layout.**
 
 The basic rules specify the beginner layout only as a picture: board sections joined by
 numbered connectors, 15 space sectors placed face up into the vacant areas, number discs
@@ -28,14 +28,21 @@ Consequently the following are unknown:
 **How the code handles it.** `SpaceBoard` is pure data and `BoardConfiguration` supplies the
 whole topology from outside the domain. `validateSpaceBoard` checks internal consistency
 (mirrored adjacency, resolvable ids); `validateBoardComposition` checks the published
-component counts. No module generates or assumes a layout.
+component counts. No module infers a layout from the reference diagram.
+
+Since the reference layout cannot be transcribed, Milestone 9's board milestone stopped waiting
+for it: `createDefaultBoardConfiguration()` supplies an **original** layout that satisfies the
+same rule model (`docs/BOARD_LAYOUT.md`). It is a designed board, not a reconstruction, and is
+not presented as reproducing the reference one. A custom `BoardConfiguration` remains fully
+supported and is never replaced by the default.
 
 **To close:** a machine-readable transcription of the beginner layout diagram, or the
-Almanac's variable set-up rules.
+Almanac's variable set-up rules. Closing it would add a second, faithful layout alongside the
+original default — it would not invalidate the original.
 
 ## 2. Beginner starting placements
 
-**Status: blocking default match creation.**
+**Status: unresolved, but no longer blocking. Worked around by original placements.**
 
 Each player begins with 2 Colonies and 1 Spaceport "as shown in the picture", and 1 Colony
 Ship on "the specified spaceport site". The specific sites are diagram-only.
@@ -45,7 +52,12 @@ Also unresolved: the exact sites used by the unused fourth colour's blocking pie
 
 **How the code handles it.** `BeginnerStartingPlacement` and `NeutralBlockingPlacement` are
 configuration records. `createBeginnerMatch` fails with `MISSING_STARTING_PLACEMENT` rather
-than inventing a position for a seat.
+than inventing a position for a seat in a supplied configuration.
+
+The default board defines its own original placements — 2 Colonies, 1 Spaceport and 1 Colony
+Ship per seat, and 2 neutral Colonies plus 1 neutral Spaceport in the unused fourth home for a
+3-player game. These are designed for the original layout and balanced by test, not derived
+from the reference picture.
 
 **To close:** the same diagram transcription as gap 1.
 
@@ -161,3 +173,25 @@ documented default (`DEFAULT_INITIAL_SUPPLY_QUANTITY`). Production already handl
 all-or-nothing per resource, so the exact number changes behaviour only in edge cases.
 
 **To close:** the component listing in the Almanac (pages 4-5).
+
+## 11. Pirate-base and ice-planet disc distribution
+
+**Status: temporary original variant in use.**
+
+The basic rules do not define how many face-down frontier discs are pirate bases or ice
+planets, which systems carry them, or how they are distributed across the board. The
+exploration rules say hazard discs are revealed and replaced with tokens, but the composition
+of the face-down pool is not published in text.
+
+This distribution is **not invented**. The default board instead uses **ordinary hidden number
+discs on every frontier planet**, so the layout is fully playable under the rules that are
+actually implemented today. This is a deliberate original starter-board variant, not a claim
+about the reference distribution.
+
+**How the code handles it.** `PlanetHazard` already exists on `Planet`, and `validateSpaceBoard`
+already rejects a planet carrying both a hazard and a disc, so hazard discs can be introduced
+by changing layout data alone — no model change is needed.
+
+**To close:** the component listing or the hazard-disc breakdown. When the pirate-base and
+ice-planet milestone lands (Milestone 17), replace this starter variant with the real
+distribution and remove this note.

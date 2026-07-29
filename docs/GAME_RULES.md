@@ -47,7 +47,13 @@ Planets in unexplored systems carry **face-down number discs**, revealed when a 
 adjacent intersection. A face-down disc never produces. A planet blocked by a pirate base or an
 ice planet carries no ordinary production number until the hazard is cleared.
 
-The exact physical layout is supplied as configuration — see `docs/RULEBOOK_GAPS.md`.
+The physical layout is supplied as configuration. Starbound Frontier ships one original default
+layout (`docs/BOARD_LAYOUT.md`); a custom layout may be supplied instead. The reference
+beginner arrangement remains untranscribed — see `docs/RULEBOOK_GAPS.md` gaps 1 and 2.
+
+On the default board every frontier planet carries an ordinary hidden number disc: the
+distribution of pirate-base and ice-planet discs is not published and is not guessed at
+(gap 11).
 
 ## Pieces
 
@@ -75,7 +81,8 @@ Each player starts with:
 - 1 Booster on their Mothership
 
 The starting player is the highest roller on two dice. In a 3-player game, the unused fourth
-colour's pieces are placed as blockers and take no further part.
+colour's 2 Colonies and 1 Spaceport are placed as blockers in its home system and take no
+further part — they never produce, move, trade, or score, and their sites stay occupied.
 
 No starting resources are produced from adjacent planets.
 

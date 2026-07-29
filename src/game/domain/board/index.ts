@@ -56,11 +56,27 @@ export {
   toIntersectionIds,
   validateBoardComposition,
   validateBoardConfiguration,
+  validatePlayableBoardConfiguration,
   validateSpaceBoard,
   type BeginnerStartingPlacement,
   type BoardConfiguration,
   type NeutralBlockingPlacement,
 } from './board-configuration'
+
+export { createDefaultBoardConfiguration, createDefaultSpaceBoard } from './default-board'
+
+export {
+  DEFAULT_BOARD_ID,
+  HOME_SYSTEM_KEYS,
+  OUTPOST_CIVILIZATIONS,
+  OUTPOST_KEYS,
+  PLANETARY_SYSTEM_KEYS,
+  SEAT_HOME_SYSTEMS,
+  THREE_PLAYER_NEUTRAL_HOME,
+  type HomeSystemKey,
+  type OutpostKey,
+  type PlanetarySystemKey,
+} from './default-board-layout'
 
 export {
   areIntersectionsAdjacent,

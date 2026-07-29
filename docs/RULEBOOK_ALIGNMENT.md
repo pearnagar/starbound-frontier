@@ -112,3 +112,20 @@ Points where the reference rules are silent and a choice was required:
    `docs/RULEBOOK_GAPS.md` gap 10.
 5. **Hidden information** never enters events: Reserve draws record a count, and a theft
    records the two players but not the resource.
+6. **The default board layout is original, not reconstructed.** The reference beginner
+   arrangement is a picture with no transcribable coordinates, so rather than guess at it —
+   or ship no playable board at all — the project designed its own layout satisfying the same
+   rule model. It is not presented as reproducing the reference board, and a custom
+   `BoardConfiguration` is still fully supported. See `docs/BOARD_LAYOUT.md`.
+7. **Frontier hazard discs are omitted from the default board.** The pirate-base and
+   ice-planet disc distribution is unpublished, so every frontier planet carries an ordinary
+   hidden disc instead. Recorded as `docs/RULEBOOK_GAPS.md` gap 11; the `PlanetHazard` model
+   already exists, so this is a layout-data choice, not a model limitation.
+
+## Board layout
+
+Terminology, system names, outpost civilisations, sector names, coordinates, and number-disc
+placement on the default board are **original to Starbound Frontier**. No published layout,
+diagram, naming, or arrangement was copied. The counts (4 home systems, 8 planetary systems,
+4 outposts, 15 sectors, 3 planets and 3 colony sites per system, 5 docks per outpost) come from
+the mechanics already recorded in the migration table above.

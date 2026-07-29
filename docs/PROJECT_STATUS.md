@@ -4,12 +4,16 @@ _Last updated: 2026-07-29_
 
 ## Current milestone
 
-Milestone 9 — Rulebook alignment refactor: **complete and verified**.
+Milestone 9 — Rulebook alignment refactor **and** the original default board configuration:
+**complete and verified**.
 
 Milestones 1–8 built a plausible but incorrect rules model. Milestone 9 replaced it with the
 mechanics of the reference space-trading rules. This was a deliberate breaking migration:
 incompatible modules and tests were deleted rather than kept behind compatibility shims. See
 `docs/RULEBOOK_ALIGNMENT.md` for the full migration table.
+
+The same milestone then closed its own remaining blocker by designing an original playable
+board rather than waiting for a layout that cannot be transcribed. See `docs/BOARD_LAYOUT.md`.
 
 ## Verified completed work
 
@@ -41,7 +45,15 @@ incompatible modules and tests were deleted rather than kept behind compatibilit
 - `validateSpaceBoard` checks mirrored adjacency, resolvable ids, and hazard/disc exclusivity;
   `validateBoardComposition` checks the published counts (4 home systems, 8 planetary systems,
   4 outposts, 15 sectors, 5 docks each).
+- `validatePlayableBoardConfiguration` layers the playable-board invariants on top: per-system
+  planet and colony-site counts, unique ids, sector grouping, graph connectivity and
+  per-home reachability, disc visibility, resource coverage, starting-placement legality, and
+  neutral-blocker validity — each with its own error code.
 - Read-only flight-graph queries: adjacency, BFS distance, range, connectivity.
+- **Original default board** (`createDefaultBoardConfiguration()`): 4 home systems, 8
+  explorable systems, 4 alien outposts, 15 sectors, 68 intersections on one connected graph,
+  with beginner placements for 4 seats and neutral blockers for 3. Deterministic and
+  serialization-stable. See `docs/BOARD_LAYOUT.md`.
 
 ### Pieces and structures
 
@@ -56,8 +68,12 @@ incompatible modules and tests were deleted rather than kept behind compatibilit
 - Beginner setup: 2 Colonies, 1 Spaceport, 1 Colony Ship, 4 victory points, 3 hidden Reserve
   cards, 1 Fame Medal piece, 1 Booster.
 - Starting player by highest two-die roll, ties broken by seat index.
-- Neutral blocking pieces for the unused colour in a 3-player game.
+- Neutral blocking pieces for the unused colour in a 3-player game, driven by the same
+  configuration-consuming code path as a 4-player game.
 - No starting production from adjacent planets.
+- `createBeginnerMatch` may omit `configuration` and receive the default board. An explicitly
+  supplied configuration is validated and used as-is — an invalid one fails rather than being
+  silently replaced by the default.
 
 ### Turns and production
 
@@ -93,12 +109,16 @@ incompatible modules and tests were deleted rather than kept behind compatibilit
 
 ## Current blockers
 
-**The exact beginner board layout is unavailable.** The reference rules publish it as a
-diagram, not as coordinates, so the domain ships without a playable default board — a
-`BoardConfiguration` must be supplied externally. See `docs/RULEBOOK_GAPS.md` gaps 1 and 2.
+None blocking further domain milestones.
 
-This does not block further domain milestones, which proceed against configured fixtures, but
-it does block a playable build.
+The missing-default-board blocker is **resolved**. The reference beginner layout is still
+published only as a diagram and still cannot be transcribed, but the project no longer waits
+for it: `createDefaultBoardConfiguration()` ships an **original** playable layout satisfying
+the same rule model. See `docs/BOARD_LAYOUT.md`. `docs/RULEBOOK_GAPS.md` gaps 1 and 2 remain
+open as unresolved _reference_ questions, downgraded from blocking to informational.
+
+One new gap was recorded rather than guessed: the pirate-base and ice-planet disc distribution
+(gap 11). The default board uses ordinary hidden discs everywhere until Milestone 17.
 
 ## Next milestone
 
@@ -115,8 +135,8 @@ Run 2026-07-29, all passing:
 | `npm run typecheck`    | Clean                 |
 | `npm run lint`         | Clean                 |
 | `npm run format:check` | Clean                 |
-| `npm run test:run`     | 207 passed (17 files) |
+| `npm run test:run`     | 258 passed (18 files) |
 | `npm run build`        | Clean                 |
 
 Playwright end-to-end tests were not run in this session; the application shell is unchanged by
-this refactor.
+the board work.

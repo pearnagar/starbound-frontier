@@ -54,8 +54,9 @@ theft all replayable from a single seed.
 ## Board model
 
 The board is **data, not geometry**. The reference beginner layout is published only as a
-diagram, so no module generates or infers a topology — a `BoardConfiguration` supplies the
-whole thing from outside the domain (see `docs/RULEBOOK_GAPS.md`).
+diagram, so no module infers a topology from it — a `BoardConfiguration` supplies the whole
+thing (see `docs/RULEBOOK_GAPS.md`). The project ships one such configuration by default,
+designed originally rather than reconstructed; see `docs/BOARD_LAYOUT.md`.
 
 `space-board.ts` defines the vocabulary: `Planet`, `PlanetarySystem`, `HomeColonySystem`,
 `AlienOutpost`, `SpaceSector`, `Intersection`, `ColonySite`, `SpaceportSite`, `Dock`, and
@@ -77,6 +78,38 @@ accidentally produce.
 `flight-graph.ts` holds read-only graph queries (adjacency, BFS distance, range, connectivity).
 It deliberately contains no movement rules; ship movement is a later milestone, and shipping a
 half-implemented mover would be worse than shipping none.
+
+### The default board, in three separated pieces
+
+The default layout is split so that data, assembly, and checking never blur together:
+
+- **`default-board-layout.ts`** — pure declarative data. System positions, planet resources and
+  disc values, outpost identities, sector groupings, the explicit flight-link list, and the
+  seat-to-home mapping. No functions that build anything, no validation.
+- **`default-board.ts`** — assembly only. Turns layout keys into branded ids, mirrors the
+  one-entry-per-pair link list into adjacency, and emits a `BoardConfiguration`. It validates
+  nothing, so a layout mistake surfaces as a validation failure rather than being papered over
+  during construction.
+- **`board-configuration.ts`** — checking only, via `validatePlayableBoardConfiguration`. It
+  re-derives every invariant from the finished board and never consults the layout module, so
+  the checks stay genuinely independent of the thing they check.
+
+Layout positions are **integer logical grid coordinates**. Nothing in the domain derives
+adjacency, identity, or legality from them — adjacency is the explicit link list, exactly as it
+is for any externally supplied board. They exist only so the data reads as a map and so a
+future renderer inherits a deterministic arrangement. No floating-point coordinate is
+authoritative anywhere.
+
+`createDefaultBoardConfiguration()` is deterministic and builds a fresh object graph per call:
+ids come from stable literal keys, collections are built in fixed declaration order, and
+neighbours are sorted, so two calls serialize identically and a caller mutating one result
+cannot affect the next.
+
+`createBeginnerMatch` takes `configuration` as optional and falls back to the default **only**
+when it is omitted. A supplied configuration is validated and used as-is; an invalid one fails
+the call rather than being silently swapped for the default, because a caller who asked for a
+specific board would otherwise get a different game than the one they requested without being
+told.
 
 ## Pieces, structures, and ships
 

@@ -98,7 +98,21 @@ _Actions replaced by Milestone 9; the cost-configuration and spending patterns s
 - [x] Scoring foundation and the 15-point target
 - [x] Obsolete mechanics removed: Longest Network, route ownership, Outpost/Nexus tiers,
       Void Marauder, randomized resource-hex board, snake setup, 8/10/14-point targets
-- [x] Verified 2026-07-29 (207/207 unit tests passing; typecheck, lint, format, build clean)
+- [x] **Original default board configuration** — `createDefaultBoardConfiguration()`:
+      4 home colony systems, 8 explorable planetary systems, 4 alien outposts, 15 space
+      sectors, 36 planets, 36 colony sites, 8 spaceport sites, 4 docking points, 20 docks,
+      68 intersections on one connected flight graph (`docs/BOARD_LAYOUT.md`)
+- [x] Layout held as declarative data (`default-board-layout.ts`), separate from assembly
+      (`default-board.ts`) and from validation (`board-configuration.ts`)
+- [x] `validatePlayableBoardConfiguration` — counts, unique ids, reference resolution,
+      connectivity and per-home reachability, per-system and per-site invariants, outpost
+      docking invariants, disc visibility, resource coverage, starting-placement legality,
+      neutral-blocker validity, each with a distinct error code
+- [x] Beginner starting placements for 4 seats and neutral blockers for 3, consumed by the
+      existing setup path with no duplicated 3-player logic
+- [x] `createBeginnerMatch` accepts an omitted configuration and supplies the default; an
+      invalid supplied configuration is rejected rather than replaced
+- [x] Verified 2026-07-29 (258/258 unit tests passing; typecheck, lint, format, build clean)
 
 _Deliberately excluded: everything in Milestones 10-22 below._
 

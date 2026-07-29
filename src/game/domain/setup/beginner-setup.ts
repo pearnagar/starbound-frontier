@@ -4,6 +4,7 @@ import {
   validateBoardConfiguration,
   type BoardConfiguration,
 } from '../board/board-configuration'
+import { createDefaultBoardConfiguration } from '../board/default-board'
 import { asShipId, createShip, type Ship } from '../buildings/ship'
 import { createColony, createSpaceport, type SiteStructure } from '../buildings/structure'
 import { createSeededRandom } from '../random/seeded-random'
@@ -25,7 +26,12 @@ import { createReservePile, createResourceSupply, drawFromReserve } from '../tur
 
 export type CreateBeginnerMatchInput = Readonly<{
   matchId: MatchId
-  configuration: BoardConfiguration
+  /**
+   * Layout to play on. Omit it to use `createDefaultBoardConfiguration()`.
+   * A configuration that *is* supplied is never replaced: if it fails
+   * validation the call fails, rather than silently falling back.
+   */
+  configuration?: BoardConfiguration
   /** Players in seat order. Each seat must have a configured placement. */
   players: readonly Player[]
   /** Seed for the Reserve shuffle, setup draws, and later dice. */
@@ -88,7 +94,10 @@ function orderFromSuppliedRolls(
  * supply, including the Shipyard consumed by the starting Spaceport.
  */
 export function createBeginnerMatch(input: CreateBeginnerMatchInput): DomainResult<Match> {
-  const { configuration, players } = input
+  const { players } = input
+  // A supplied configuration is used as-is and validated below; only an omitted
+  // one falls back to the default. An invalid custom board is never replaced.
+  const configuration = input.configuration ?? createDefaultBoardConfiguration()
 
   if (players.length < 3 || players.length > 4) {
     return failure('INVALID_PLAYER_COUNT', 'A match requires 3 or 4 players.', 'players')
